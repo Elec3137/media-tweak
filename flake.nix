@@ -17,15 +17,17 @@
         cargoLock = {
           lockFile = ./Cargo.lock;
         };
-        nativeBuildInputs = [ ];
-        buildInputs = [ ];
+        nativeBuildInputs = [ pkg-config ];
+        buildInputs = [ ffmpeg ];
       };
-      
+
       devShells."x86_64-linux".default = mkShell {
-        inputsFrom = [ self.packages."x86_64-linux".default ];
+        inputsFrom = [ self.packages."x86_64-linux".default ffmpeg ];
         LD_LIBRARY_PATH = lib.makeLibraryPath [
           wayland
           libxkbcommon
+          ffmpeg
+          libclang
         ];
       };
     };
