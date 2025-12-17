@@ -315,15 +315,16 @@ impl State {
     }
 
     fn instantiate(&self) -> Result<Child, impl Error> {
-        let mut args = vec!["-i", &self.input];
-
-        args.push("-ss");
+        let mut args = vec!["-ss"];
         let start = self.start.to_string();
         args.push(&start);
 
         args.push("-t");
         let duration = (self.end - self.start).to_string();
         args.push(&duration);
+
+        args.push("-i");
+        args.push(&self.input);
 
         if self.use_audio {
             args.push("-c:a");
