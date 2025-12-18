@@ -8,6 +8,8 @@ use std::{
 
 use ffmpeg_next as ffmpeg;
 
+use tokio::{fs::File, io::AsyncReadExt};
+
 use iced::{
     Color, Element, Event, Length, Subscription, Task, Theme,
     alignment::Horizontal,
@@ -15,6 +17,7 @@ use iced::{
     keyboard::{self, Key, key},
     widget::{
         Image, checkbox, column,
+        image::Handle,
         operation::{self, focus_next},
         row, slider, text, text_input,
     },
@@ -36,6 +39,9 @@ enum Message {
 
     Update,
 
+    LoadedStartPreview(Vec<u8>),
+    LoadedEndPreview(Vec<u8>),
+
     Event(Event),
 }
 
@@ -53,8 +59,8 @@ struct State {
     use_video: bool,
     use_audio: bool,
 
-    start_preview: String,
-    end_preview: String,
+    start_preview: Option<Handle>,
+    end_preview: Option<Handle>,
 
     output: String,
     output_is_generated: bool,
@@ -104,14 +110,8 @@ impl State {
                 Task::none()
             }
 
-            Message::Submitted => {
-                self.check_inputs();
-                focus_next()
-            }
-            Message::Update => {
-                self.check_inputs();
-                Task::none()
-            }
+            Message::Submitted => focus_next().chain(self.check_inputs()),
+            Message::Update => self.check_inputs(),
 
             Message::ToggleVideo => {
                 self.use_video = !self.use_video;
@@ -119,6 +119,15 @@ impl State {
             }
             Message::ToggleAudio => {
                 self.use_audio = !self.use_audio;
+                Task::none()
+            }
+
+            Message::LoadedStartPreview(v) => {
+                self.start_preview = Some(Handle::from_bytes(v));
+                Task::none()
+            }
+            Message::LoadedEndPreview(v) => {
+                self.end_preview = Some(Handle::from_bytes(v));
                 Task::none()
             }
 
@@ -201,13 +210,6 @@ impl State {
         let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
         let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
 
-        let start_preview = Image::new(&self.start_preview)
-            .width(Length::Fill)
-            .height(Length::Fill);
-        let end_preview = Image::new(&self.end_preview)
-            .width(Length::Fill)
-            .height(Length::Fill);
-
         column![
             input_field,
             row![text("Start time (seconds):  "), start_field, start_slider],
@@ -220,7 +222,20 @@ impl State {
             ]
             .spacing(10),
             output_field,
-            row![start_preview, end_preview],
+            if let Some(h_start) = self.start_preview.clone()
+                && let Some(h_end) = self.end_preview.clone()
+            {
+                row![
+                    Image::<Handle>::new(h_start)
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                    Image::<Handle>::new(h_end)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                ]
+            } else {
+                row![]
+            },
             text("Press Shift-Enter to execute")
         ]
         .spacing(20)
@@ -232,26 +247,27 @@ impl State {
         event::listen().map(Message::Event)
     }
 
-    fn check_inputs(&mut self) {
+    fn check_inputs(&mut self) -> Task<Message> {
+        let mut task = Task::none();
+
         if self.number_changed {
             self.clamp_numbers();
             if !self.input_changed {
-                println!("{:#?}", self.create_preview_images());
+                task = task.chain(self.create_preview_images());
             }
 
             self.number_changed = false;
         }
         if self.input_changed {
-            println!(
-                "{:#?}\n{:#?}",
-                self.update_from_input(),
-                self.create_preview_images()
-            );
-
+            #[allow(unused_must_use)]
+            self.update_from_input();
+            task = task.chain(self.create_preview_images());
             self.input_changed = false;
         } else if self.output.is_empty() && !self.output_is_generated {
             self.generate_output_path();
         }
+
+        task
     }
 
     fn clamp_numbers(&mut self) {
@@ -360,18 +376,18 @@ impl State {
         Command::new("ffmpeg").args(args).spawn()
     }
 
-    fn create_preview_images(&mut self) -> (Result<Child, impl Error>, Result<Child, impl Error>) {
-        let mut args = vec!["-ss"];
+    fn create_preview_images(&mut self) -> Task<Message> {
+        let mut args: Vec<String> = vec!["-n".to_string(), "-ss".to_string()];
         let start = self.start.to_string();
-        args.push(&start);
+        args.push(start);
 
-        args.push("-i");
-        args.push(&self.input);
+        args.push("-i".to_string());
+        args.push(self.input.clone());
 
-        args.push("-frames:v");
-        args.push("1");
+        args.push("-frames:v".to_string());
+        args.push("1".to_string());
 
-        self.start_preview = format!(
+        let start_preview = format!(
             "/tmp/{}_preview-at-{}.webp",
             PathBuf::from(&self.input)
                 .file_stem()
@@ -381,7 +397,7 @@ impl State {
                 .unwrap_or_default(),
             self.start
         );
-        self.end_preview = format!(
+        let end_preview = format!(
             "/tmp/{}_preview-at-{}.webp",
             PathBuf::from(&self.input)
                 .file_stem()
@@ -392,20 +408,54 @@ impl State {
             self.end
         );
 
-        args.push(&self.start_preview);
+        args.push(start_preview.clone());
 
-        eprintln!("{:#?}", args);
-        let r0 = Command::new("ffmpeg").args(&args).spawn();
-
+        let mut args_end = args.clone();
         let end = self.end.to_string();
-        *args.get_mut(1).unwrap() = &end;
-        args.pop();
-        args.push(&self.end_preview);
+        *args_end.get_mut(2).unwrap() = end;
+        args_end.pop();
+        args_end.push(end_preview.clone());
 
-        eprintln!("{:#?}", args);
-        let r1 = Command::new("ffmpeg").args(&args).spawn();
+        Task::batch([
+            Task::perform(
+                async move {
+                    let mut buffer = Vec::new();
 
-        (r0, r1)
+                    if let Ok(mut child) = tokio::process::Command::new("ffmpeg").args(args).spawn()
+                    {
+                        // Go on regardless of status
+                        // ffmpeg might fail due to file existing
+                        // but that just means we already have the file we want
+                        if let Ok(_) = child.wait().await {
+                            let mut file = File::open(start_preview).await.unwrap();
+                            file.read_to_end(&mut buffer).await.unwrap();
+                        }
+                    }
+                    buffer
+                },
+                Message::LoadedStartPreview,
+            ),
+            Task::perform(
+                async move {
+                    let mut buffer = Vec::new();
+
+                    if let Ok(mut child) = tokio::process::Command::new("ffmpeg")
+                        .args(args_end)
+                        .spawn()
+                    {
+                        // Go on regardless of status
+                        // ffmpeg might fail due to file existing
+                        // but that just means we already have the file we want
+                        if let Ok(_) = child.wait().await {
+                            let mut file = File::open(end_preview).await.unwrap();
+                            file.read_to_end(&mut buffer).await.unwrap();
+                        }
+                    }
+                    buffer
+                },
+                Message::LoadedEndPreview,
+            ),
+        ])
     }
 }
 
