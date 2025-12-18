@@ -2,7 +2,7 @@ use std::{
     env,
     error::Error,
     ffi::OsStr,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command},
 };
 
@@ -39,8 +39,8 @@ enum Message {
 
     Update,
 
-    LoadedStartPreview(Vec<u8>),
-    LoadedEndPreview(Vec<u8>),
+    LoadedStartPreview(Option<Vec<u8>>),
+    LoadedEndPreview(Option<Vec<u8>>),
 
     Event(Event),
 }
@@ -58,6 +58,9 @@ struct State {
 
     use_video: bool,
     use_audio: bool,
+
+    last_start_preview: String,
+    last_end_preview: String,
 
     start_preview: Option<Handle>,
     end_preview: Option<Handle>,
@@ -122,12 +125,16 @@ impl State {
                 Task::none()
             }
 
-            Message::LoadedStartPreview(v) => {
-                self.start_preview = Some(Handle::from_bytes(v));
+            Message::LoadedStartPreview(o) => {
+                if let Some(b) = o {
+                    self.start_preview = Some(Handle::from_bytes(b));
+                }
                 Task::none()
             }
-            Message::LoadedEndPreview(v) => {
-                self.end_preview = Some(Handle::from_bytes(v));
+            Message::LoadedEndPreview(o) => {
+                if let Some(b) = o {
+                    self.end_preview = Some(Handle::from_bytes(b));
+                }
                 Task::none()
             }
 
@@ -377,16 +384,6 @@ impl State {
     }
 
     fn create_preview_images(&mut self) -> Task<Message> {
-        let mut args: Vec<String> = vec!["-n".to_string(), "-ss".to_string()];
-        let start = self.start.to_string();
-        args.push(start);
-
-        args.push("-i".to_string());
-        args.push(self.input.clone());
-
-        args.push("-frames:v".to_string());
-        args.push("1".to_string());
-
         let start_preview = format!(
             "/tmp/{}_preview-at-{}.webp",
             PathBuf::from(&self.input)
@@ -408,53 +405,117 @@ impl State {
             self.end
         );
 
-        args.push(start_preview.clone());
-
-        let mut args_end = args.clone();
-        let end = self.end.to_string();
-        *args_end.get_mut(2).unwrap() = end;
-        args_end.pop();
-        args_end.push(end_preview.clone());
-
         Task::batch([
-            Task::perform(
-                async move {
-                    let mut buffer = Vec::new();
-
-                    if let Ok(mut child) = tokio::process::Command::new("ffmpeg").args(args).spawn()
-                    {
-                        // Go on regardless of status
-                        // ffmpeg might fail due to file existing
-                        // but that just means we already have the file we want
-                        if let Ok(_) = child.wait().await {
-                            let mut file = File::open(start_preview).await.unwrap();
-                            file.read_to_end(&mut buffer).await.unwrap();
+            if start_preview == self.last_start_preview {
+                Task::none()
+            } else if Path::new(&start_preview).exists() {
+                self.last_start_preview = start_preview.clone();
+                Task::perform(
+                    async move {
+                        let mut buffer = Vec::new();
+                        match File::open(&start_preview).await {
+                            Ok(mut file) => match file.read_to_end(&mut buffer).await {
+                                Ok(_) => Some(buffer),
+                                Err(e) => {
+                                    eprintln!("failed to read '{start_preview}': {e}");
+                                    None
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("failed to open '{start_preview}': {e}");
+                                None
+                            }
                         }
-                    }
-                    buffer
-                },
-                Message::LoadedStartPreview,
-            ),
-            Task::perform(
-                async move {
-                    let mut buffer = Vec::new();
+                    },
+                    Message::LoadedStartPreview,
+                )
+            } else {
+                self.last_start_preview = start_preview;
+                let args = [
+                    "-n".to_string(),
+                    "-ss".to_string(),
+                    self.start.to_string(),
+                    "-i".to_string(),
+                    self.input.clone(),
+                    "-frames:v".to_string(),
+                    "1".to_string(),
+                    self.last_start_preview.clone(),
+                ];
+                Task::perform(
+                    async move {
+                        let mut buffer = Vec::new();
 
-                    if let Ok(mut child) = tokio::process::Command::new("ffmpeg")
-                        .args(args_end)
-                        .spawn()
-                    {
-                        // Go on regardless of status
-                        // ffmpeg might fail due to file existing
-                        // but that just means we already have the file we want
-                        if let Ok(_) = child.wait().await {
-                            let mut file = File::open(end_preview).await.unwrap();
+                        if let Ok(mut child) =
+                            tokio::process::Command::new("ffmpeg").args(&args).spawn()
+                            && let Ok(_) = child.wait().await
+                        {
+                            let mut file = File::open(args.last().unwrap()).await.unwrap();
                             file.read_to_end(&mut buffer).await.unwrap();
+                            Some(buffer)
+                        } else {
+                            None
                         }
-                    }
-                    buffer
-                },
-                Message::LoadedEndPreview,
-            ),
+                    },
+                    Message::LoadedStartPreview,
+                )
+            },
+            if end_preview == self.last_end_preview {
+                Task::none()
+            } else if Path::new(&end_preview).exists() {
+                self.last_end_preview = end_preview.clone();
+                Task::perform(
+                    async move {
+                        let mut buffer = Vec::new();
+                        match File::open(&end_preview).await {
+                            Ok(mut file) => match file.read_to_end(&mut buffer).await {
+                                Ok(_) => Some(buffer),
+                                Err(e) => {
+                                    eprintln!("failed to read '{end_preview}': {e}");
+                                    None
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("failed to open '{end_preview}': {e}");
+                                None
+                            }
+                        }
+                    },
+                    Message::LoadedEndPreview,
+                )
+            } else {
+                self.last_end_preview = end_preview;
+                let args = [
+                    "-n".to_string(),
+                    "-ss".to_string(),
+                    if self.end > self.input_length - 0.5 {
+                        (self.end - 0.5).to_string()
+                    } else {
+                        self.end.to_string()
+                    },
+                    "-i".to_string(),
+                    self.input.clone(),
+                    "-frames:v".to_string(),
+                    "1".to_string(),
+                    self.last_end_preview.clone(),
+                ];
+                Task::perform(
+                    async move {
+                        let mut buffer = Vec::new();
+
+                        if let Ok(mut child) =
+                            tokio::process::Command::new("ffmpeg").args(&args).spawn()
+                            && let Ok(_) = child.wait().await
+                        {
+                            let mut file = File::open(args.last().unwrap()).await.unwrap();
+                            file.read_to_end(&mut buffer).await.unwrap();
+                            Some(buffer)
+                        } else {
+                            None
+                        }
+                    },
+                    Message::LoadedEndPreview,
+                )
+            },
         ])
     }
 }
