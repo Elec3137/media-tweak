@@ -54,6 +54,9 @@ struct State {
     use_video: bool,
     use_audio: bool,
 
+    start_preview: String,
+    end_preview: String,
+
     output: String,
     output_is_generated: bool,
 }
@@ -231,10 +234,16 @@ impl State {
     fn check_inputs(&mut self) {
         if self.number_changed {
             self.clamp_numbers();
+            if !self.input_changed {
+                #[allow(unused_must_use)]
+                self.create_preview_images();
+            }
         }
         if self.input_changed {
             #[allow(unused_must_use)]
             self.update_from_input();
+            #[allow(unused_must_use)]
+            self.create_preview_images();
         } else if self.output.is_empty() && !self.output_is_generated {
             self.generate_output_path();
         }
@@ -344,6 +353,54 @@ impl State {
 
         eprintln!("{:#?}", args);
         Command::new("ffmpeg").args(args).spawn()
+    }
+
+    fn create_preview_images(&mut self) -> (Result<Child, impl Error>, Result<Child, impl Error>) {
+        let mut args = vec!["-ss"];
+        let start = self.start.to_string();
+        args.push(&start);
+
+        args.push("-i");
+        args.push(&self.input);
+
+        args.push("-frames:v");
+        args.push("1");
+
+        self.start_preview = format!(
+            "/tmp/{}_preview-at-{}.webp",
+            PathBuf::from(&self.input)
+                .file_stem()
+                .unwrap_or_default()
+                .to_os_string()
+                .into_string()
+                .unwrap_or_default(),
+            self.start
+        );
+        self.end_preview = format!(
+            "/tmp/{}_preview-at-{}.webp",
+            PathBuf::from(&self.input)
+                .file_stem()
+                .unwrap_or_default()
+                .to_os_string()
+                .into_string()
+                .unwrap_or_default(),
+            self.end
+        );
+
+        args.push(&self.start_preview);
+
+        eprintln!("{:#?}", args);
+        let r0 = Command::new("ffmpeg").args(&args).spawn();
+
+        let end = self.end.to_string();
+        *args.get_mut(1).unwrap() = &end;
+        args.pop();
+        args.push(&self.end_preview);
+
+        eprintln!("{:#?}", args);
+        let r1 = Command::new("ffmpeg").args(&args).spawn();
+
+        (r0, r1)
     }
 }
 
