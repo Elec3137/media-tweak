@@ -280,7 +280,8 @@ impl State {
             ]
             .spacing(10),
             output_field,
-            if let Some(h_start) = self.start_preview.clone()
+            if self.use_video
+                && let Some(h_start) = self.start_preview.clone()
                 && let Some(h_end) = self.end_preview.clone()
             {
                 row![
@@ -434,7 +435,13 @@ impl State {
         Command::new("ffmpeg").args(args).spawn()
     }
 
+    /// makes a batch of tasks to create start and end preview images
+    /// no effect if use_video is false
     fn create_preview_images(&mut self) -> Task<Message> {
+        if !self.use_video {
+            return Task::none();
+        }
+
         let start_preview = Preview {
             seek: self.start.to_string(),
             input: self.input.clone(),
@@ -450,11 +457,12 @@ impl State {
             ),
         };
         let end_preview = Preview {
-            seek: if self.end > self.input_length - 0.1 {
-                (self.end - 0.5).to_string()
-            } else {
-                self.end.to_string()
-            },
+            seek: // seek slightly before the end of the video to get a frame
+                if self.end > self.input_length - 0.1 {
+                    (self.end - 0.5).to_string()
+                } else {
+                    self.end.to_string()
+                },
             input: self.input.clone(),
             output: format!(
                 "/tmp/{}_preview-at-{}.webp",
@@ -470,6 +478,7 @@ impl State {
 
         Task::batch([
             if start_preview.output == self.last_start_preview {
+                // No need to reload the same image
                 Task::none()
             } else if Path::new(&start_preview.output).exists() {
                 self.last_start_preview = start_preview.output.clone();
@@ -485,6 +494,7 @@ impl State {
                 )
             },
             if end_preview.output == self.last_end_preview {
+                // No need to reload the same image
                 Task::none()
             } else if Path::new(&end_preview.output).exists() {
                 self.last_end_preview = end_preview.output.clone();
