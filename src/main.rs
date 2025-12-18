@@ -9,12 +9,12 @@ use std::{
 use ffmpeg_next as ffmpeg;
 
 use iced::{
-    Color, Element, Event, Subscription, Task, Theme,
+    Color, Element, Event, Length, Subscription, Task, Theme,
     alignment::Horizontal,
     event,
     keyboard::{self, Key, key},
     widget::{
-        checkbox, column,
+        Image, checkbox, column,
         operation::{self, focus_next},
         row, slider, text, text_input,
     },
@@ -32,7 +32,6 @@ enum Message {
     ToggleVideo,
     ToggleAudio,
 
-    InputSubmitted,
     Submitted,
 
     Update,
@@ -105,12 +104,6 @@ impl State {
                 Task::none()
             }
 
-            Message::InputSubmitted => {
-                #[allow(unused_must_use)]
-                self.update_from_input();
-                self.input_changed = false;
-                focus_next()
-            }
             Message::Submitted => {
                 self.check_inputs();
                 focus_next()
@@ -178,7 +171,7 @@ impl State {
     fn view(&self) -> Element<'_, Message> {
         let input_field = text_input("input file", &self.input)
             .on_input(Message::InputChange)
-            .on_submit(Message::InputSubmitted)
+            .on_submit(Message::Submitted)
             .id("first");
 
         let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
@@ -208,6 +201,13 @@ impl State {
         let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
         let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
 
+        let start_preview = Image::new(&self.start_preview)
+            .width(Length::Fill)
+            .height(Length::Fill);
+        let end_preview = Image::new(&self.end_preview)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
         column![
             input_field,
             row![text("Start time (seconds):  "), start_field, start_slider],
@@ -220,6 +220,7 @@ impl State {
             ]
             .spacing(10),
             output_field,
+            row![start_preview, end_preview],
             text("Press Shift-Enter to execute")
         ]
         .spacing(20)
@@ -235,15 +236,19 @@ impl State {
         if self.number_changed {
             self.clamp_numbers();
             if !self.input_changed {
-                #[allow(unused_must_use)]
-                self.create_preview_images();
+                println!("{:#?}", self.create_preview_images());
             }
+
+            self.number_changed = false;
         }
         if self.input_changed {
-            #[allow(unused_must_use)]
-            self.update_from_input();
-            #[allow(unused_must_use)]
-            self.create_preview_images();
+            println!(
+                "{:#?}\n{:#?}",
+                self.update_from_input(),
+                self.create_preview_images()
+            );
+
+            self.input_changed = false;
         } else if self.output.is_empty() && !self.output_is_generated {
             self.generate_output_path();
         }
