@@ -24,6 +24,54 @@ use iced::{
     window,
 };
 
+struct Preview {
+    seek: String,
+    input: String,
+    output: String,
+}
+
+impl Preview {
+    async fn load_existing_preview_image(self) -> Option<Vec<u8>> {
+        let mut buffer = Vec::new();
+        match File::open(&self.output).await {
+            Ok(mut file) => match file.read_to_end(&mut buffer).await {
+                Ok(_) => Some(buffer),
+                Err(e) => {
+                    eprintln!("failed to read '{}': {e}", self.output);
+                    None
+                }
+            },
+            Err(e) => {
+                eprintln!("failed to open '{}': {e}", self.output);
+                None
+            }
+        }
+    }
+    async fn create_and_load_preview_image(self) -> Option<Vec<u8>> {
+        let args = [
+            "-n",
+            "-ss",
+            &self.seek,
+            "-i",
+            &self.input,
+            "-frames:v",
+            "1",
+            &self.output,
+        ];
+        let mut buffer = Vec::new();
+
+        if let Ok(mut child) = tokio::process::Command::new("ffmpeg").args(&args).spawn()
+            && let Ok(_) = child.wait().await
+        {
+            let mut file = File::open(&self.output).await.unwrap();
+            file.read_to_end(&mut buffer).await.unwrap();
+            Some(buffer)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 enum Message {
     InputChange(String),
@@ -70,7 +118,7 @@ struct State {
 }
 
 impl State {
-    fn new() -> Self {
+    fn new() -> (Self, Task<Message>) {
         ffmpeg::init().unwrap();
 
         let mut state = State::default();
@@ -83,11 +131,14 @@ impl State {
 
             match state.update_from_input() {
                 Err(e) => eprintln!("Failed to inspect video: {}: {e}", state.input),
-                Ok(()) => {}
+                Ok(()) => {
+                    let preview_tasks = state.create_preview_images();
+                    return (state, preview_tasks);
+                }
             }
         }
 
-        state
+        (state, Task::none())
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -384,135 +435,67 @@ impl State {
     }
 
     fn create_preview_images(&mut self) -> Task<Message> {
-        let start_preview = format!(
-            "/tmp/{}_preview-at-{}.webp",
-            PathBuf::from(&self.input)
-                .file_stem()
-                .unwrap_or_default()
-                .to_os_string()
-                .into_string()
-                .unwrap_or_default(),
-            self.start
-        );
-        let end_preview = format!(
-            "/tmp/{}_preview-at-{}.webp",
-            PathBuf::from(&self.input)
-                .file_stem()
-                .unwrap_or_default()
-                .to_os_string()
-                .into_string()
-                .unwrap_or_default(),
-            self.end
-        );
+        let start_preview = Preview {
+            seek: self.start.to_string(),
+            input: self.input.clone(),
+            output: format!(
+                "/tmp/{}_preview-at-{}.webp",
+                PathBuf::from(&self.input)
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap_or_default(),
+                self.start
+            ),
+        };
+        let end_preview = Preview {
+            seek: if self.end > self.input_length - 0.1 {
+                (self.end - 0.5).to_string()
+            } else {
+                self.end.to_string()
+            },
+            input: self.input.clone(),
+            output: format!(
+                "/tmp/{}_preview-at-{}.webp",
+                PathBuf::from(&self.input)
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_os_string()
+                    .into_string()
+                    .unwrap_or_default(),
+                self.end
+            ),
+        };
 
         Task::batch([
-            if start_preview == self.last_start_preview {
+            if start_preview.output == self.last_start_preview {
                 Task::none()
-            } else if Path::new(&start_preview).exists() {
-                self.last_start_preview = start_preview.clone();
+            } else if Path::new(&start_preview.output).exists() {
+                self.last_start_preview = start_preview.output.clone();
                 Task::perform(
-                    async move {
-                        let mut buffer = Vec::new();
-                        match File::open(&start_preview).await {
-                            Ok(mut file) => match file.read_to_end(&mut buffer).await {
-                                Ok(_) => Some(buffer),
-                                Err(e) => {
-                                    eprintln!("failed to read '{start_preview}': {e}");
-                                    None
-                                }
-                            },
-                            Err(e) => {
-                                eprintln!("failed to open '{start_preview}': {e}");
-                                None
-                            }
-                        }
-                    },
+                    start_preview.load_existing_preview_image(),
                     Message::LoadedStartPreview,
                 )
             } else {
-                self.last_start_preview = start_preview;
-                let args = [
-                    "-n".to_string(),
-                    "-ss".to_string(),
-                    self.start.to_string(),
-                    "-i".to_string(),
-                    self.input.clone(),
-                    "-frames:v".to_string(),
-                    "1".to_string(),
-                    self.last_start_preview.clone(),
-                ];
+                self.last_start_preview = start_preview.output.clone();
                 Task::perform(
-                    async move {
-                        let mut buffer = Vec::new();
-
-                        if let Ok(mut child) =
-                            tokio::process::Command::new("ffmpeg").args(&args).spawn()
-                            && let Ok(_) = child.wait().await
-                        {
-                            let mut file = File::open(args.last().unwrap()).await.unwrap();
-                            file.read_to_end(&mut buffer).await.unwrap();
-                            Some(buffer)
-                        } else {
-                            None
-                        }
-                    },
+                    start_preview.create_and_load_preview_image(),
                     Message::LoadedStartPreview,
                 )
             },
-            if end_preview == self.last_end_preview {
+            if end_preview.output == self.last_end_preview {
                 Task::none()
-            } else if Path::new(&end_preview).exists() {
-                self.last_end_preview = end_preview.clone();
+            } else if Path::new(&end_preview.output).exists() {
+                self.last_end_preview = end_preview.output.clone();
                 Task::perform(
-                    async move {
-                        let mut buffer = Vec::new();
-                        match File::open(&end_preview).await {
-                            Ok(mut file) => match file.read_to_end(&mut buffer).await {
-                                Ok(_) => Some(buffer),
-                                Err(e) => {
-                                    eprintln!("failed to read '{end_preview}': {e}");
-                                    None
-                                }
-                            },
-                            Err(e) => {
-                                eprintln!("failed to open '{end_preview}': {e}");
-                                None
-                            }
-                        }
-                    },
+                    end_preview.load_existing_preview_image(),
                     Message::LoadedEndPreview,
                 )
             } else {
-                self.last_end_preview = end_preview;
-                let args = [
-                    "-n".to_string(),
-                    "-ss".to_string(),
-                    if self.end > self.input_length - 0.5 {
-                        (self.end - 0.5).to_string()
-                    } else {
-                        self.end.to_string()
-                    },
-                    "-i".to_string(),
-                    self.input.clone(),
-                    "-frames:v".to_string(),
-                    "1".to_string(),
-                    self.last_end_preview.clone(),
-                ];
+                self.last_end_preview = end_preview.output.clone();
                 Task::perform(
-                    async move {
-                        let mut buffer = Vec::new();
-
-                        if let Ok(mut child) =
-                            tokio::process::Command::new("ffmpeg").args(&args).spawn()
-                            && let Ok(_) = child.wait().await
-                        {
-                            let mut file = File::open(args.last().unwrap()).await.unwrap();
-                            file.read_to_end(&mut buffer).await.unwrap();
-                            Some(buffer)
-                        } else {
-                            None
-                        }
-                    },
+                    end_preview.create_and_load_preview_image(),
                     Message::LoadedEndPreview,
                 )
             },
