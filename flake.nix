@@ -7,27 +7,53 @@
     { self, nixpkgs, ... }:
     let
       pkgs = nixpkgs.legacyPackages."x86_64-linux";
+      cargoToml = (builtins.fromTOML (builtins.readFile ./Cargo.toml));
     in
     with pkgs;
     {
-      packages."x86_64-linux".default = rustPlatform.buildRustPackage {
-        pname = "media-tweak";
-        version = self.shortRev or self.dirtyShortRev;
+      packages."x86_64-linux".default = rustPlatform.buildRustPackage rec {
+        pname = cargoToml.package.name;
+        version = cargoToml.package.version;
+
         src = ./.;
-        cargoLock = {
-          lockFile = ./Cargo.lock;
+
+        cargoDeps = rustPlatform.importCargoLock {
+          lockFile = "${src}/Cargo.lock";
         };
-        nativeBuildInputs = [ pkg-config ];
-        buildInputs = [ ffmpeg ];
+
+        nativeBuildInputs = [
+          rustPlatform.bindgenHook
+          pkg-config
+          ffmpeg
+        ];
+        buildInputs = [
+          ffmpeg
+          wayland
+          libxkbcommon
+        ];
+
+        desktopItem = makeDesktopItem {
+          name = pname;
+          desktopName = pname;
+          mimeTypes = [
+            "video/matroshka"
+            "video/mp4"
+          ];
+          exec = "${pname}";
+        };
+
+        postFixup = ''
+          mkdir -p "$out/share/applications"
+          ln -s "${desktopItem}"/share/applications/* "$out/share/applications/"
+          patchelf --set-rpath ${lib.makeLibraryPath buildInputs} $out/bin/${pname}
+        '';
       };
 
       devShells."x86_64-linux".default = mkShell {
-        inputsFrom = [ self.packages."x86_64-linux".default ffmpeg ];
+        inputsFrom = [ self.packages."x86_64-linux".default ];
         LD_LIBRARY_PATH = lib.makeLibraryPath [
           wayland
           libxkbcommon
-          ffmpeg
-          libclang
         ];
       };
     };
