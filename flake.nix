@@ -26,10 +26,17 @@
           pkg-config
           ffmpeg
         ];
+
         buildInputs = [
           ffmpeg
-          wayland
+
           libxkbcommon
+
+          wayland
+
+          xorg.libX11
+          xorg.libXcursor
+          xorg.libXi
         ];
 
         desktopItem = makeDesktopItem {
