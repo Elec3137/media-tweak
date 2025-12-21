@@ -32,19 +32,19 @@ struct Preview {
 
 impl Preview {
     async fn load_existing_preview_image(self) -> Option<Vec<u8>> {
-        let mut buffer = Vec::new();
-        match File::open(&self.output).await {
-            Ok(mut file) => match file.read_to_end(&mut buffer).await {
-                Ok(_) => Some(buffer),
-                Err(e) => {
-                    eprintln!("failed to read '{}': {e}", self.output);
-                    None
-                }
-            },
-            Err(e) => {
-                eprintln!("failed to open '{}': {e}", self.output);
-                None
-            }
+        let mut buf = Vec::new();
+
+        if let Ok(mut file) = File::open(&self.output)
+            .await
+            .inspect_err(|e| eprintln!("failed to open '{}': {e}", self.output))
+            && let Ok(_) = file
+                .read_to_end(&mut buf)
+                .await
+                .inspect_err(|e| eprintln!("failed to read '{}': {e}", self.output))
+        {
+            Some(buf)
+        } else {
+            None
         }
     }
     async fn create_and_load_preview_image(self) -> Option<Vec<u8>> {
@@ -58,14 +58,26 @@ impl Preview {
             "1",
             &self.output,
         ];
-        let mut buffer = Vec::new();
+        let mut buf = Vec::new();
 
-        if let Ok(mut child) = tokio::process::Command::new("ffmpeg").args(&args).spawn()
-            && let Ok(_) = child.wait().await
+        if let Ok(mut child) = tokio::process::Command::new("ffmpeg")
+            .args(&args)
+            .spawn()
+            .inspect_err(|e| eprintln!("failed to spawn ffmpeg: {e}"))
+            && let Ok(status) = child
+                .wait()
+                .await
+                .inspect_err(|e| eprintln!("failed to wait for ffmpeg: {e}"))
+            && status.success()
+            && let Ok(mut file) = File::open(&self.output)
+                .await
+                .inspect_err(|e| eprintln!("failed to open file '{}': {e}", &self.output))
+            && let Ok(_) = file
+                .read_to_end(&mut buf)
+                .await
+                .inspect_err(|e| eprintln!("failed to read file '{}': {e}", &self.output))
         {
-            let mut file = File::open(&self.output).await.unwrap();
-            file.read_to_end(&mut buffer).await.unwrap();
-            Some(buffer)
+            Some(buf)
         } else {
             None
         }
