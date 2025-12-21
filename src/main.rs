@@ -141,12 +141,12 @@ impl State {
         if let Some(str) = args.nth(1) {
             state.input = str;
 
-            match state.update_from_input() {
-                Err(e) => eprintln!("Failed to inspect video: {}: {e}", state.input),
-                Ok(()) => {
-                    let preview_tasks = state.create_preview_images();
-                    return (state, preview_tasks);
-                }
+            if let Ok(()) = state
+                .update_from_input()
+                .inspect_err(|e| eprintln!("failed to inspect input media '{}': {e}", state.input))
+            {
+                let preview_tasks = state.create_preview_images();
+                return (state, preview_tasks);
             }
         }
 
@@ -330,8 +330,10 @@ impl State {
             self.number_changed = false;
         }
         if self.input_changed {
-            #[allow(unused_must_use)]
-            self.update_from_input();
+            self.update_from_input().map_or_else(
+                |e| eprintln!("failed to inspect input media '{}': {e}", self.input),
+                |()| {},
+            );
             task = task.chain(self.create_preview_images());
             self.input_changed = false;
         } else if self.output.is_empty() && !self.output_is_generated {
