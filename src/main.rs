@@ -350,15 +350,16 @@ impl State {
     }
 
     fn clamp_numbers(&mut self) {
-        if self.end >= self.input_length {
+        if self.end > self.input_length {
             self.end = self.input_length;
-        } else if self.end < self.start {
-            self.end = self.start;
         }
-        if self.start >= self.end {
+
+        if self.start > self.end {
             self.start = self.end;
-        } else if self.start > self.input_length {
-            self.start = self.input_length;
+        }
+
+        if self.end < self.start {
+            self.end = self.start;
         }
     }
 
