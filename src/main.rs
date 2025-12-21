@@ -72,11 +72,11 @@ impl Preview {
             && status.success()
             && let Ok(mut file) = File::open(&self.output)
                 .await
-                .inspect_err(|e| eprintln!("failed to open file '{}': {e}", &self.output))
+                .inspect_err(|e| eprintln!("failed to open file '{}': {e}", self.output))
             && let Ok(_) = file
                 .read_to_end(&mut buf)
                 .await
-                .inspect_err(|e| eprintln!("failed to read file '{}': {e}", &self.output))
+                .inspect_err(|e| eprintln!("failed to read file '{}': {e}", self.output))
         {
             Some(buf)
         } else {
