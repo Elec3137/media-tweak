@@ -12,11 +12,11 @@ use tokio::{fs::File, io::AsyncReadExt};
 
 use iced::{
     Color, Element, Event, Length, Subscription, Task, Theme,
-    alignment::Horizontal,
+    alignment::{Horizontal, Vertical},
     event,
     keyboard::{self, Key, key},
     widget::{
-        Image, checkbox, column,
+        Image, button, checkbox, column,
         image::Handle,
         operation::{self, focus_next},
         row, slider, text, text_input,
@@ -104,6 +104,8 @@ enum Message {
     LoadedEndPreview(Option<Vec<u8>>),
 
     Event(Event),
+
+    Instantiate,
 }
 
 #[derive(Debug, Default)]
@@ -224,9 +226,7 @@ impl State {
 
                         Key::Named(key::Named::Enter) => {
                             if modifiers.shift() {
-                                #[allow(unused_must_use)]
-                                self.instantiate();
-                                window::latest().and_then(window::close)
+                                Task::done(Message::Instantiate)
                             } else {
                                 focus_next()
                             }
@@ -237,6 +237,12 @@ impl State {
                 } else {
                     Task::none()
                 }
+            }
+
+            Message::Instantiate => {
+                self.instantiate()
+                    .map_or_else(|e| eprintln!("failed to instantiate: {e}"), |_| {});
+                window::latest().and_then(window::close)
             }
         }
     }
@@ -274,6 +280,8 @@ impl State {
         let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
         let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
 
+        let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
+
         column![
             input_field,
             row![text("Start time (seconds):  "), start_field, start_slider],
@@ -301,7 +309,11 @@ impl State {
             } else {
                 row![]
             },
-            text("Press Shift-Enter to execute")
+            row![
+                text("Press Shift-Enter to execute, or:"),
+                instantiate_button
+            ]
+            .spacing(10)
         ]
         .spacing(20)
         .align_x(Horizontal::Center)
