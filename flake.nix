@@ -55,6 +55,7 @@
             "audio/flac"
             "audio/ogg"
           ];
+          icon = "image-x-generic";
           exec = pname;
         };
 
