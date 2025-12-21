@@ -284,15 +284,17 @@ impl State {
 
         column![
             input_field,
-            row![text("Start time (seconds):  "), start_field, start_slider],
-            row![text("End time (seconds):    "), end_field, end_slider],
+            row![text("Start time (seconds):  "), start_field, start_slider]
+                .align_y(Vertical::Center),
+            row![text("End time (seconds):    "), end_field, end_slider].align_y(Vertical::Center),
             row![
                 text("Video stream: "),
                 video_checkbox,
                 text("          Audio stream: "),
                 audio_checkbox
             ]
-            .spacing(10),
+            .spacing(10)
+            .align_y(Vertical::Center),
             output_field,
             if self.use_video
                 && let Some(h_start) = self.start_preview.clone()
@@ -314,6 +316,7 @@ impl State {
                 instantiate_button
             ]
             .spacing(10)
+            .align_y(Vertical::Center)
         ]
         .spacing(20)
         .align_x(Horizontal::Center)
