@@ -325,28 +325,28 @@ impl State {
     }
 
     fn check_inputs(&mut self) -> Task<Message> {
-        let mut task = Task::none();
+        let mut tasks = Vec::new();
 
         if self.number_changed {
             self.clamp_numbers();
             if !self.input_changed {
-                task = task.chain(self.create_preview_images());
+                tasks.push(self.create_preview_images());
             }
 
             self.number_changed = false;
         }
         if self.input_changed {
-            self.update_from_input().map_or_else(
-                |e| eprintln!("failed to inspect input media '{}': {e}", self.input),
-                |()| {},
-            );
-            task = task.chain(self.create_preview_images());
+            match self.update_from_input() {
+                Err(e) => eprintln!("failed to inspect input media '{}': {e}", self.input),
+                Ok(()) => tasks.push(self.create_preview_images()),
+            };
+
             self.input_changed = false;
         } else if self.output.is_empty() && !self.output_is_generated {
             self.generate_output_path();
         }
 
-        task
+        Task::batch(tasks)
     }
 
     fn clamp_numbers(&mut self) {
