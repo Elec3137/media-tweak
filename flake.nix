@@ -55,7 +55,7 @@
             "audio/flac"
             "audio/ogg"
           ];
-          exec = "${pname}";
+          exec = pname;
         };
 
         postFixup = ''
