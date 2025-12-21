@@ -214,15 +214,8 @@ impl State {
                             }
                         }
 
-                        // toggle video/audio
-                        Key::Character("v") => {
-                            self.use_video = !self.use_video;
-                            Task::none()
-                        }
-                        Key::Character("a") => {
-                            self.use_audio = !self.use_audio;
-                            Task::none()
-                        }
+                        Key::Character("v") => Task::done(Message::ToggleVideo),
+                        Key::Character("a") => Task::done(Message::ToggleAudio),
 
                         // early-exit hotkeys
                         Key::Named(key::Named::Escape) | Key::Character("q") => {
