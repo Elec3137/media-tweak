@@ -311,12 +311,9 @@ impl State {
             } else {
                 row![]
             },
-            row![
-                text("Press Shift-Enter to execute, or:"),
-                instantiate_button
-            ]
-            .spacing(10)
-            .align_y(Vertical::Center)
+            row![text("Press Shift-Enter, or:"), instantiate_button]
+                .spacing(10)
+                .align_y(Vertical::Center)
         ]
         .spacing(20)
         .align_x(Horizontal::Center)
