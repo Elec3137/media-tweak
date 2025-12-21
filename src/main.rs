@@ -10,18 +10,19 @@ use ffmpeg_next as ffmpeg;
 
 use tokio::{fs::File, io::AsyncReadExt};
 
-use iced::{
-    Color, Element, Event, Length, Subscription, Task, Theme,
-    alignment::{Horizontal, Vertical},
-    event,
-    keyboard::{self, Key, key},
-    widget::{
-        Image, button, checkbox, column,
-        image::Handle,
-        operation::{self, focus_next},
-        row, slider, text, text_input,
+use cosmic::{
+    Action, Renderer, Task, Theme,
+    app::Settings,
+    iced::{
+        Event, Length, Subscription,
+        alignment::{Horizontal, Vertical},
+        event,
+        keyboard::{self, Key, key},
+        widget::{Image, button, checkbox, column, image::Handle, row, slider, text, text_input},
+        window,
     },
-    window,
+    iced_core::Element,
+    iced_widget::{focus_next, focus_previous},
 };
 
 struct Preview {
@@ -108,8 +109,10 @@ enum Message {
     Instantiate,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct State {
+    core: cosmic::Core,
+
     input: String,
     input_changed: bool,
 
@@ -132,8 +135,31 @@ struct State {
     output_is_generated: bool,
 }
 
-impl State {
-    fn new() -> (Self, Task<Message>) {
+impl cosmic::Application for State {
+    /// The async executor that will be used to run your application's commands.
+    type Executor = cosmic::executor::Default;
+
+    /// Data that your application receives to its init method.
+    type Flags = ();
+
+    /// Messages which the application and its widgets will emit.
+    type Message = Message;
+
+    /// Unique identifier in RDNN (reverse domain name notation) format.
+    const APP_ID: &'static str = "dev.electria.media-tweak";
+
+    fn core(&self) -> &cosmic::Core {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut cosmic::Core {
+        &mut self.core
+    }
+
+    fn init(
+        _core: cosmic::Core,
+        _flags: Self::Flags,
+    ) -> (Self, Task<cosmic::Action<Self::Message>>) {
         ffmpeg::init().unwrap();
 
         let mut state = State::default();
@@ -143,20 +169,15 @@ impl State {
         let mut args = env::args();
         if let Some(str) = args.nth(1) {
             state.input = str;
+            state.input_changed = true;
 
-            if let Ok(()) = state
-                .update_from_input()
-                .inspect_err(|e| eprintln!("failed to inspect input media '{}': {e}", state.input))
-            {
-                let preview_tasks = state.create_preview_images();
-                return (state, preview_tasks);
-            }
+            (state, Task::done(Action::App(Message::Update)))
+        } else {
+            (state, Task::none())
         }
-
-        (state, Task::none())
     }
 
-    fn update(&mut self, message: Message) -> Task<Message> {
+    fn update(&mut self, message: Message) -> Task<Action<Message>> {
         match message {
             Message::InputChange(str) => {
                 self.input = str;
@@ -180,7 +201,7 @@ impl State {
             }
 
             Message::Submitted => focus_next().chain(self.check_inputs()),
-            Message::Update => self.check_inputs(),
+            Message::Update => Task::none().chain(self.check_inputs()),
 
             Message::ToggleVideo => {
                 self.use_video = !self.use_video;
@@ -210,23 +231,23 @@ impl State {
                         // input field cycling
                         Key::Named(key::Named::Tab) => {
                             if modifiers.shift() {
-                                operation::focus_previous()
+                                focus_previous()
                             } else {
-                                operation::focus_next()
+                                focus_next()
                             }
                         }
 
-                        Key::Character("v") => Task::done(Message::ToggleVideo),
-                        Key::Character("a") => Task::done(Message::ToggleAudio),
+                        Key::Character("v") => Task::done(Action::App(Message::ToggleVideo)),
+                        Key::Character("a") => Task::done(Action::App(Message::ToggleAudio)),
 
                         // early-exit hotkeys
                         Key::Named(key::Named::Escape) | Key::Character("q") => {
-                            window::latest().and_then(window::close)
+                            window::close(self.core.main_window_id().unwrap())
                         }
 
                         Key::Named(key::Named::Enter) => {
                             if modifiers.shift() {
-                                Task::done(Message::Instantiate)
+                                Task::done(Action::App(Message::Instantiate))
                             } else {
                                 focus_next()
                             }
@@ -242,16 +263,15 @@ impl State {
             Message::Instantiate => {
                 self.instantiate()
                     .map_or_else(|e| eprintln!("failed to instantiate: {e}"), |_| {});
-                window::latest().and_then(window::close)
+                window::close(self.core.main_window_id().unwrap())
             }
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> Element<'_, Message, Theme, Renderer> {
         let input_field = text_input("input file", &self.input)
             .on_input(Message::InputChange)
-            .on_submit(Message::Submitted)
-            .id("first");
+            .on_submit(Message::Submitted);
 
         let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
             .default(0)
@@ -277,8 +297,10 @@ impl State {
             .on_input(Message::OutputChange)
             .on_submit(Message::Submitted);
 
-        let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
-        let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
+        let video_checkbox =
+            checkbox("Video: ", self.use_video).on_toggle(|_| Message::ToggleVideo);
+        let audio_checkbox =
+            checkbox("Audio: ", self.use_audio).on_toggle(|_| Message::ToggleAudio);
 
         let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
 
@@ -288,9 +310,9 @@ impl State {
                 .align_y(Vertical::Center),
             row![text("End time (seconds):    "), end_field, end_slider].align_y(Vertical::Center),
             row![
-                text("Video stream: "),
+                // text("Video stream: "),
                 video_checkbox,
-                text("          Audio stream: "),
+                // text("          Audio stream: "),
                 audio_checkbox
             ]
             .spacing(10)
@@ -323,8 +345,10 @@ impl State {
     fn subscription(&self) -> Subscription<Message> {
         event::listen().map(Message::Event)
     }
+}
 
-    fn check_inputs(&mut self) -> Task<Message> {
+impl State {
+    fn check_inputs(&mut self) -> Task<Action<Message>> {
         let mut task = Task::none();
 
         if self.number_changed {
@@ -457,7 +481,7 @@ impl State {
 
     /// makes a batch of tasks to create start and end preview images
     /// no effect if use_video is false
-    fn create_preview_images(&mut self) -> Task<Message> {
+    fn create_preview_images(&mut self) -> Task<Action<Message>> {
         if !self.use_video {
             return Task::none();
         }
@@ -530,24 +554,12 @@ impl State {
                 )
             },
         ])
+        .map(Action::from)
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    iced::application(State::new, State::update, State::view)
-        .subscription(State::subscription)
-        .theme(Theme::custom(
-            "custom",
-            iced::theme::Palette {
-                background: Color::from_rgb8(0x0f, 0x0f, 0x0f),
-                text: Color::WHITE,
-                primary: Color::from_rgb8(0, u8::MAX, u8::MAX),
-                success: Color::from_rgb8(0, u8::MAX, 0),
-                warning: Color::from_rgb8(128, 0, 0),
-                danger: Color::from_rgb8(u8::MAX, 0, 0),
-            },
-        ))
-        .run()?;
+    cosmic::app::run::<State>(Settings::default(), ())?;
 
     Ok(())
 }

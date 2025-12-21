@@ -5,5 +5,27 @@ edition = "2024"
 
 [dependencies]
 ffmpeg-next = "8.0.0"
-iced = { version = "0.14.0", features = ["image", "tokio"] }
+iced = { version = "*", features = ["image"] }
 tokio = { version = "1.44.2", features = ["fs", "io-util", "process"] }
+
+[dependencies.libcosmic]
+git = "https://github.com/pop-os/libcosmic.git"
+# See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.
+features = [
+    # accessability
+    "a11y",
+
+    # Use the cosmic-settings-daemon for config handling on Linux targets
+    "dbus-config",
+
+    # async runtime
+    "tokio",
+    # Windowing support for X11, Windows, Mac, & Redox
+    "winit",
+    # Add Wayland support to winit
+    "wayland",
+    # GPU-accelerated rendering
+    "wgpu",
+]
+default-features = false
+
