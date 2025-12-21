@@ -90,8 +90,8 @@ enum Message {
     InputChange(String),
     OutputChange(String),
 
-    StartChange(f64),
-    EndChange(f64),
+    SeekChange(f64),
+    DurChange(f64),
 
     ToggleVideo,
     ToggleAudio,
@@ -115,8 +115,8 @@ struct State {
 
     input_length: f64,
 
-    start: f64,
-    end: f64,
+    seek: f64,
+    dur: f64,
     number_changed: bool,
 
     use_video: bool,
@@ -168,13 +168,13 @@ impl State {
                 self.output_is_generated = false;
                 Task::none()
             }
-            Message::StartChange(val) => {
-                self.start = val;
+            Message::SeekChange(val) => {
+                self.seek = val;
                 self.number_changed = true;
                 Task::none()
             }
-            Message::EndChange(val) => {
-                self.end = val;
+            Message::DurChange(val) => {
+                self.dur = val;
                 self.number_changed = true;
                 Task::none()
             }
@@ -253,23 +253,23 @@ impl State {
             .on_submit(Message::Submitted)
             .id("first");
 
-        let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
+        let seek_slider = slider(0_f64..=self.dur - 1.0, self.seek, Message::SeekChange)
             .default(0)
             .on_release(Message::Update);
-        let start_field = text_input("start", &self.start.to_string())
-            .on_input(|str| Message::StartChange(str.parse().unwrap_or_default()))
+        let seek_field = text_input("seek", &self.seek.to_string())
+            .on_input(|str| Message::SeekChange(str.parse().unwrap_or_default()))
             .width(200)
             .on_submit(Message::Submitted);
 
-        let end_slider = slider(
-            self.start + 0.9..=self.input_length,
-            self.end,
-            Message::EndChange,
+        let dur_slider = slider(
+            0.0..=self.input_length - self.seek,
+            self.dur,
+            Message::DurChange,
         )
-        .default(self.input_length)
+        .default(self.input_length - self.seek)
         .on_release(Message::Update);
-        let end_field = text_input("end", &self.end.to_string())
-            .on_input(|str| Message::EndChange(str.parse().unwrap_or_default()))
+        let dur_field = text_input("duration", &self.dur.to_string())
+            .on_input(|str| Message::DurChange(str.parse().unwrap_or_default()))
             .width(200)
             .on_submit(Message::Submitted);
 
@@ -284,9 +284,8 @@ impl State {
 
         column![
             input_field,
-            row![text("Start time (seconds):  "), start_field, start_slider]
-                .align_y(Vertical::Center),
-            row![text("End time (seconds):    "), end_field, end_slider].align_y(Vertical::Center),
+            row![text("Seek time (seconds):  "), seek_field, seek_slider].align_y(Vertical::Center),
+            row![text("Duration  (seconds):  "), dur_field, dur_slider].align_y(Vertical::Center),
             row![
                 text("Video stream: "),
                 video_checkbox,
@@ -350,15 +349,11 @@ impl State {
     }
 
     fn clamp_numbers(&mut self) {
-        if self.end >= self.input_length {
-            self.end = self.input_length;
-        } else if self.end < self.start {
-            self.end = self.start;
+        if self.seek >= self.input_length {
+            self.seek = self.input_length - 0.5;
         }
-        if self.start >= self.end {
-            self.start = self.end;
-        } else if self.start > self.input_length {
-            self.start = self.input_length;
+        if self.dur >= self.input_length - self.seek {
+            self.dur = self.input_length - self.seek;
         }
     }
 
@@ -387,8 +382,8 @@ impl State {
             self.generate_output_path();
         }
 
-        // Set the end to the duration of the video
-        self.end = self.input_length;
+        // Set the initial duration to the duration of the video
+        self.dur = self.input_length;
 
         Ok(())
     }
@@ -425,12 +420,12 @@ impl State {
 
     fn instantiate(&self) -> Result<Child, impl Error> {
         let mut args = vec!["-ss"];
-        let start = self.start.to_string();
-        args.push(&start);
+        let seek = self.seek.to_string();
+        args.push(&seek);
 
         args.push("-t");
-        let duration = (self.end - self.start).to_string();
-        args.push(&duration);
+        let dur = self.dur.to_string();
+        args.push(&dur);
 
         args.push("-i");
         args.push(&self.input);
@@ -463,7 +458,7 @@ impl State {
         }
 
         let start_preview = Preview {
-            seek: self.start.to_string(),
+            seek: self.seek.to_string(),
             input: self.input.clone(),
             output: format!(
                 "/tmp/{}_preview-at-{}.webp",
@@ -473,15 +468,15 @@ impl State {
                     .to_os_string()
                     .into_string()
                     .unwrap_or_default(),
-                self.start
+                self.seek
             ),
         };
         let end_preview = Preview {
             seek: // seek slightly before the end of the video to get a frame
-                if self.end > self.input_length - 0.1 {
-                    (self.end - 0.5).to_string()
+                if self.dur + self.seek > self.input_length - 0.1 {
+                    (self.dur + self.seek - 0.5).to_string()
                 } else {
-                    self.end.to_string()
+                    (self.dur + self.seek).to_string()
                 },
             input: self.input.clone(),
             output: format!(
@@ -492,7 +487,7 @@ impl State {
                     .to_os_string()
                     .into_string()
                     .unwrap_or_default(),
-                self.end
+                self.dur + self.seek
             ),
         };
 
