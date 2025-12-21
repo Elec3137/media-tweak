@@ -44,7 +44,16 @@
           desktopName = pname;
           mimeTypes = [
             "video/matroshka"
+            "video/webm"
             "video/mp4"
+
+            "audio/matroshka"
+            "audio/webm"
+            "audio/mp4"
+
+            "audio/aac"
+            "audio/flac"
+            "audio/ogg"
           ];
           exec = "${pname}";
         };
