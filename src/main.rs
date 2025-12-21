@@ -58,6 +58,7 @@ impl Preview {
             "1",
             &self.output,
         ];
+        eprintln!("{:#?}", args);
         let mut buf = Vec::new();
 
         if let Ok(mut child) = tokio::process::Command::new("ffmpeg")
