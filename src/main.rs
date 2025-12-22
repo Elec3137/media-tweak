@@ -123,6 +123,8 @@ enum Message {
 
     StartChange(f64),
     EndChange(f64),
+    StartSliderChange(f64),
+    EndSliderChange(f64),
 
     ToggleVideo,
     ToggleAudio,
@@ -210,6 +212,17 @@ impl State {
                 Task::none()
             }
 
+            // we don't need to keep track of if number_changed
+            // since we can be sure that the slider itself clamps inputs
+            Message::StartSliderChange(val) => {
+                self.start = val;
+                self.create_preview_images()
+            }
+            Message::EndSliderChange(val) => {
+                self.end = val;
+                self.create_preview_images()
+            }
+
             Message::Submitted => focus_next().chain(self.check_inputs()),
             Message::Update => self.check_inputs(),
 
@@ -284,9 +297,13 @@ impl State {
             .on_submit(Message::Submitted)
             .id("first");
 
-        let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
-            .default(0)
-            .on_release(Message::Update);
+        let start_slider = slider(
+            0_f64..=self.end - 1.0,
+            self.start,
+            Message::StartSliderChange,
+        )
+        .default(0)
+        .on_release(Message::Update);
         let start_field = text_input("start", &self.start.to_string())
             .on_input(|str| Message::StartChange(str.parse().unwrap_or_default()))
             .width(200)
@@ -295,7 +312,7 @@ impl State {
         let end_slider = slider(
             self.start + 0.9..=self.input_length,
             self.end,
-            Message::EndChange,
+            Message::EndSliderChange,
         )
         .default(self.input_length)
         .on_release(Message::Update);
