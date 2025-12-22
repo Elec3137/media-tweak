@@ -3,7 +3,7 @@ use std::{
     error::Error,
     ffi::OsStr,
     path::{Path, PathBuf},
-    process::{Child, Command},
+    process::Command,
 };
 
 use ffmpeg_next as ffmpeg;
@@ -64,7 +64,6 @@ impl Preview {
                 .inspect_err(|e| eprintln!("failed to seek to '{}': {e}", self.seek))
                 .is_ok()
             {
-                // We only look at the first packet
                 for packet in ictx.packets().filter_map(|(stream, packet)| {
                     if stream.index() == target_stream {
                         Some(packet)
@@ -78,7 +77,9 @@ impl Preview {
                         .is_ok()
                         && decoder
                             .receive_frame(&mut decoded)
-                            .inspect_err(|e| eprintln!("decoder failed to recieve frame: {e}"))
+                            .inspect_err(|e| {
+                                eprintln!("decoder failed to recieve frame (likely benign): {e}")
+                            })
                             .is_ok()
                         && scalar
                             .run(&decoded, &mut rgb_frame)
