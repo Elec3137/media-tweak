@@ -122,9 +122,9 @@ async fn pick_file() -> Option<PathBuf> {
         .await
         .and_then(|file| Some(file.path().to_path_buf()))
 }
-async fn pick_folder() -> Option<PathBuf> {
+async fn pick_new_file() -> Option<PathBuf> {
     rfd::AsyncFileDialog::new()
-        .pick_folder()
+        .save_file()
         .await
         .and_then(|file| Some(file.path().to_path_buf()))
 }
@@ -229,7 +229,7 @@ impl State {
             }
 
             Message::PickInput => Task::perform(pick_file(), Message::InputPicked),
-            Message::PickOutput => Task::perform(pick_folder(), Message::OutputPicked),
+            Message::PickOutput => Task::perform(pick_new_file(), Message::OutputPicked),
             Message::InputPicked(opt) => {
                 if let Some(path) = opt
                     && let Some(string) = path.to_str()
@@ -242,10 +242,7 @@ impl State {
                 }
             }
             Message::OutputPicked(opt) => {
-                if let Some(mut path) = opt {
-                    // push instead of setting filename
-                    // since picked folder is interpreted as the filename here
-                    path.push(Path::new(&self.output).file_name().unwrap_or_default());
+                if let Some(path) = opt {
                     if let Some(string) = path.to_str() {
                         self.output = string.to_owned();
                         self.output_is_generated = false;
@@ -354,7 +351,7 @@ impl State {
         let output_field = text_input("output file", &self.output)
             .on_input(Message::OutputChange)
             .on_submit(Message::Submitted);
-        let output_picker = button("pick folder").on_press(Message::PickOutput);
+        let output_picker = button("pick file").on_press(Message::PickOutput);
 
         let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
         let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
