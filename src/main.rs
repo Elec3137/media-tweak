@@ -259,10 +259,16 @@ impl State {
 
             Message::ToggleVideo => {
                 self.use_video = !self.use_video;
+                if !self.use_video && !self.use_audio {
+                    self.use_audio = true;
+                }
                 Task::none()
             }
             Message::ToggleAudio => {
                 self.use_audio = !self.use_audio;
+                if !self.use_video && !self.use_audio {
+                    self.use_video = true;
+                }
                 Task::none()
             }
 
