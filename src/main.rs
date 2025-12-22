@@ -157,6 +157,8 @@ struct State {
 
     last_start_preview: Preview,
     last_end_preview: Preview,
+    last_start_preview_bytes: Vec<u8>,
+    last_end_preview_bytes: Vec<u8>,
 
     start_preview: Option<Handle>,
     end_preview: Option<Handle>,
@@ -237,13 +239,19 @@ impl State {
 
             Message::LoadedStartPreview(o) => {
                 if let Some(b) = o {
-                    self.start_preview = Some(Handle::from_bytes(b));
+                    if b != self.last_start_preview_bytes {
+                        self.last_start_preview_bytes = b.clone();
+                        self.start_preview = Some(Handle::from_bytes(b));
+                    }
                 }
                 Task::none()
             }
             Message::LoadedEndPreview(o) => {
                 if let Some(b) = o {
-                    self.end_preview = Some(Handle::from_bytes(b));
+                    if b != self.last_end_preview_bytes {
+                        self.last_end_preview_bytes = b.clone();
+                        self.end_preview = Some(Handle::from_bytes(b));
+                    }
                 }
                 Task::none()
             }
