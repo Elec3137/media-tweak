@@ -37,6 +37,8 @@
           xorg.libX11
           xorg.libXcursor
           xorg.libXi
+
+          zenity
         ];
 
         desktopItem = makeDesktopItem {
