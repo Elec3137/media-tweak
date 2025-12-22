@@ -314,11 +314,13 @@ impl State {
                 }
             }
 
-            Message::Instantiate => {
-                self.instantiate()
-                    .map_or_else(|e| eprintln!("failed to instantiate: {e}"), |_| {});
-                window::latest().and_then(window::close)
-            }
+            Message::Instantiate => match self.instantiate() {
+                Err(e) => {
+                    eprintln!("failed to instantiate: {e}");
+                    Task::none()
+                }
+                Ok(()) => window::latest().and_then(window::close),
+            },
         }
     }
 
@@ -501,7 +503,7 @@ impl State {
             .unwrap_or_default();
     }
 
-    fn instantiate(&self) -> Result<Child, impl Error> {
+    fn instantiate(&self) -> Result<(), impl Error> {
         let mut args = vec!["-ss"];
         let start = self.start.to_string();
         args.push(&start);
@@ -530,7 +532,25 @@ impl State {
         args.push(&self.output);
 
         eprintln!("{:#?}", args);
-        Command::new("ffmpeg").args(args).spawn()
+
+        match Command::new("ffmpeg")
+            .args(args)
+            .spawn()
+            .and_then(|mut child| child.wait())
+            .and_then(|status| Ok(status.success()))
+        {
+            Ok(is_success) => {
+                if is_success {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "returned unsuccessful status",
+                    ))
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// makes a batch of tasks to create start and end preview images
