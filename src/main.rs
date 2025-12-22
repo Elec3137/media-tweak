@@ -115,7 +115,6 @@ impl State {
                 {
                     self.input_exists = exists;
                 }
-                Task::none()
             }
             Message::OutputChange(str) => {
                 self.output = str;
@@ -127,30 +126,25 @@ impl State {
                 {
                     self.output_folder_exists = exists;
                 }
-                Task::none()
             }
             Message::StartChange(val) => {
                 self.start = val;
                 self.number_changed = true;
-                Task::none()
             }
             Message::EndChange(val) => {
                 self.end = val;
                 self.number_changed = true;
-                Task::none()
             }
 
-            Message::PickInput => Task::perform(pick_file(), Message::InputPicked),
-            Message::PickOutput => Task::perform(pick_folder(), Message::OutputPicked),
+            Message::PickInput => return Task::perform(pick_file(), Message::InputPicked),
+            Message::PickOutput => return Task::perform(pick_folder(), Message::OutputPicked),
             Message::InputPicked(opt) => {
                 if let Some(path) = opt
                     && let Some(string) = path.to_str()
                 {
                     self.input = string.to_owned();
                     self.input_changed = true;
-                    Task::done(Message::Update)
-                } else {
-                    Task::none()
+                    return Task::done(Message::Update);
                 }
             }
             Message::OutputPicked(opt) => {
@@ -163,33 +157,22 @@ impl State {
                         self.output_is_generated = false;
                     }
                 }
-                Task::none()
             }
 
-            Message::Submitted => Task::batch([focus_next(), self.check_inputs()]),
-            Message::Update => self.check_inputs(),
+            Message::Submitted => return Task::batch([focus_next(), self.check_inputs()]),
+            Message::Update => return self.check_inputs(),
 
-            Message::ToggleVideo => {
-                self.use_video = !self.use_video;
-                Task::none()
-            }
-            Message::ToggleAudio => {
-                self.use_audio = !self.use_audio;
-                Task::none()
-            }
+            Message::ToggleVideo => self.use_video = !self.use_video,
+            Message::ToggleAudio => self.use_audio = !self.use_audio,
 
-            Message::LoadedStartPreview(o) => {
-                if let Some(b) = o {
-                    self.start_preview = Some(Handle::from_bytes(b));
-                }
-                Task::none()
+            Message::LoadedStartPreview(Some(bytes)) => {
+                self.start_preview = Some(Handle::from_bytes(bytes))
             }
-            Message::LoadedEndPreview(o) => {
-                if let Some(b) = o {
-                    self.end_preview = Some(Handle::from_bytes(b));
-                }
-                Task::none()
+            Message::LoadedEndPreview(Some(bytes)) => {
+                self.end_preview = Some(Handle::from_bytes(bytes))
             }
+            Message::LoadedStartPreview(None) => {}
+            Message::LoadedEndPreview(None) => {}
 
             Message::Event(event) => {
                 if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
@@ -197,43 +180,40 @@ impl State {
                         // input field cycling
                         Key::Named(key::Named::Tab) => {
                             if modifiers.shift() {
-                                operation::focus_previous()
+                                return operation::focus_previous();
                             } else {
-                                operation::focus_next()
+                                return operation::focus_next();
                             }
                         }
 
-                        Key::Character("v") => Task::done(Message::ToggleVideo),
-                        Key::Character("a") => Task::done(Message::ToggleAudio),
+                        Key::Character("v") => return Task::done(Message::ToggleVideo),
+                        Key::Character("a") => return Task::done(Message::ToggleAudio),
 
                         // early-exit hotkeys
                         Key::Named(key::Named::Escape) | Key::Character("q") => {
-                            window::latest().and_then(window::close)
+                            return window::latest().and_then(window::close);
                         }
 
                         Key::Named(key::Named::Enter) => {
                             if modifiers.shift() {
-                                Task::done(Message::Instantiate)
+                                return Task::done(Message::Instantiate);
                             } else {
-                                focus_next()
+                                return focus_next();
                             }
                         }
 
-                        _ => Task::none(),
+                        _ => {}
                     }
-                } else {
-                    Task::none()
                 }
             }
 
             Message::Instantiate => match self.instantiate() {
-                Err(e) => {
-                    eprintln!("failed to instantiate: {e}");
-                    Task::none()
-                }
-                Ok(()) => window::latest().and_then(window::close),
+                Err(e) => eprintln!("failed to instantiate: {e}"),
+                Ok(()) => return window::latest().and_then(window::close),
             },
         }
+
+        Task::none()
     }
 
     fn view(&self) -> Element<'_, Message> {
