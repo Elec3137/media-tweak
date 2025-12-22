@@ -2,13 +2,11 @@ use std::{
     env,
     error::Error,
     ffi::OsStr,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Child, Command},
 };
 
 use ffmpeg_next as ffmpeg;
-
-use tokio::{fs::File, io::AsyncReadExt};
 
 use iced::{
     Color, Element, Event, Length, Subscription, Task, Theme,
@@ -24,64 +22,97 @@ use iced::{
     window,
 };
 
+#[derive(Debug, Default, PartialEq, Clone)]
 struct Preview {
-    seek: String,
+    seek: i64,
     input: String,
-    output: String,
 }
 
 impl Preview {
-    async fn load_existing_preview_image(self) -> Option<Vec<u8>> {
-        let mut buf = Vec::new();
-
-        if let Ok(mut file) = File::open(&self.output)
-            .await
-            .inspect_err(|e| eprintln!("failed to open '{}': {e}", self.output))
-            && let Ok(_) = file
-                .read_to_end(&mut buf)
-                .await
-                .inspect_err(|e| eprintln!("failed to read '{}': {e}", self.output))
+    async fn decode_preview_image(self) -> Option<Vec<u8>> {
+        if let Ok(mut ictx) = ffmpeg::format::input(&self.input)
+            .inspect_err(|e| eprintln!("failed to open '{}' with ffmpeg: {e}", self.input))
+            && let Ok(input) = ictx
+                .streams()
+                .best(ffmpeg_next::media::Type::Video)
+                .ok_or(ffmpeg::Error::StreamNotFound)
+                .inspect_err(|e| eprintln!("Failed to find video stream: {e}"))
+            && let Ok(context_decoder) =
+                ffmpeg::codec::context::Context::from_parameters(input.parameters())
+                    .inspect_err(|e| eprintln!("failed to get context decoder: {e}"))
+            && let Ok(mut decoder) = context_decoder
+                .decoder()
+                .video()
+                .inspect_err(|e| eprintln!("failed to get final decoder: {e}"))
+            && let Ok(mut scalar) = ffmpeg::software::scaling::Context::get(
+                decoder.format(),
+                decoder.width(),
+                decoder.height(),
+                ffmpeg::format::Pixel::RGB24,
+                decoder.width(),
+                decoder.height(),
+                ffmpeg::software::scaling::Flags::BILINEAR,
+            )
+            .inspect_err(|e| eprintln!("failed to get scalar of created decoder: {e}"))
         {
-            Some(buf)
-        } else {
-            None
-        }
-    }
-    async fn create_and_load_preview_image(self) -> Option<Vec<u8>> {
-        let args = [
-            "-n",
-            "-ss",
-            &self.seek,
-            "-i",
-            &self.input,
-            "-frames:v",
-            "1",
-            &self.output,
-        ];
-        eprintln!("{:#?}", args);
-        let mut buf = Vec::new();
+            let target_stream = input.index();
+            let mut decoded = ffmpeg::util::frame::video::Video::empty();
+            let mut rgb_frame = ffmpeg::util::frame::video::Video::empty();
 
-        if let Ok(mut child) = tokio::process::Command::new("ffmpeg")
-            .args(&args)
-            .spawn()
-            .inspect_err(|e| eprintln!("failed to spawn ffmpeg: {e}"))
-            && let Ok(status) = child
-                .wait()
-                .await
-                .inspect_err(|e| eprintln!("failed to wait for ffmpeg: {e}"))
-            && status.success()
-            && let Ok(mut file) = File::open(&self.output)
-                .await
-                .inspect_err(|e| eprintln!("failed to open file '{}': {e}", self.output))
-            && let Ok(_) = file
-                .read_to_end(&mut buf)
-                .await
-                .inspect_err(|e| eprintln!("failed to read file '{}': {e}", self.output))
-        {
-            Some(buf)
-        } else {
-            None
+            if ictx
+                .seek(self.seek, i64::MIN..i64::MAX)
+                .inspect_err(|e| eprintln!("failed to seek to '{}': {e}", self.seek))
+                .is_ok()
+            {
+                // We only look at the first packet
+                for packet in ictx.packets().filter_map(|(stream, packet)| {
+                    if stream.index() == target_stream {
+                        Some(packet)
+                    } else {
+                        None
+                    }
+                }) {
+                    if decoder
+                        .send_packet(&packet)
+                        .inspect_err(|e| eprintln!("decoder failed to send packet: {e}"))
+                        .is_ok()
+                        && decoder
+                            .receive_frame(&mut decoded)
+                            .inspect_err(|e| eprintln!("decoder failed to recieve frame: {e}"))
+                            .is_ok()
+                        && scalar
+                            .run(&decoded, &mut rgb_frame)
+                            .inspect_err(|e| eprintln!("failed to scale rgb_frame: {e}"))
+                            .is_ok()
+                    {
+                        let mut buf = Vec::new();
+
+                        // copy the PPM signature
+                        buf.extend_from_slice(
+                            format!("P6\n{} {}\n255\n", rgb_frame.width(), rgb_frame.height())
+                                .as_bytes(),
+                        );
+                        buf.extend_from_slice(rgb_frame.data(0));
+
+                        // write output to a file (for debugging)
+                        // use std::{fs::File, io::Write};
+                        // if let Ok(mut file) =
+                        //     File::create_new(format!("/tmp/frame{}.ppm", self.seek))
+                        //         .inspect_err(|e| eprintln!("failed to create file: {e}"))
+                        // {
+                        //     match file.write_all(&buf) {
+                        //         Ok(_) => println!("successfully wrote to file"),
+                        //         Err(e) => eprintln!("failed to write to file: {e}"),
+                        //     }
+                        // }
+
+                        return Some(buf);
+                    }
+                }
+            }
         }
+
+        None
     }
 }
 
@@ -122,8 +153,8 @@ struct State {
     use_video: bool,
     use_audio: bool,
 
-    last_start_preview: String,
-    last_end_preview: String,
+    last_start_preview: Preview,
+    last_end_preview: Preview,
 
     start_preview: Option<Handle>,
     end_preview: Option<Handle>,
@@ -464,69 +495,37 @@ impl State {
         }
 
         let start_preview = Preview {
-            seek: self.start.to_string(),
+            seek: (self.start * 1_000_000.0).round() as i64,
             input: self.input.clone(),
-            output: format!(
-                "/tmp/{}_preview-at-{}.webp",
-                PathBuf::from(&self.input)
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_os_string()
-                    .into_string()
-                    .unwrap_or_default(),
-                self.start
-            ),
         };
         let end_preview = Preview {
             seek: // seek slightly before the end of the video to get a frame
-                if self.end > self.input_length - 0.1 {
-                    (self.end - 0.5).to_string()
+                (if self.end > self.input_length - 0.1 {
+                    self.end - 0.5
                 } else {
-                    self.end.to_string()
-                },
+                    self.end
+                } * 1_000_000.0).round() as i64,
             input: self.input.clone(),
-            output: format!(
-                "/tmp/{}_preview-at-{}.webp",
-                PathBuf::from(&self.input)
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_os_string()
-                    .into_string()
-                    .unwrap_or_default(),
-                self.end
-            ),
         };
 
         Task::batch([
-            if start_preview.output == self.last_start_preview {
+            if start_preview == self.last_start_preview {
                 // No need to reload the same image
                 Task::none()
-            } else if Path::new(&start_preview.output).exists() {
-                self.last_start_preview = start_preview.output.clone();
-                Task::perform(
-                    start_preview.load_existing_preview_image(),
-                    Message::LoadedStartPreview,
-                )
             } else {
-                self.last_start_preview = start_preview.output.clone();
+                self.last_start_preview = start_preview.clone();
                 Task::perform(
-                    start_preview.create_and_load_preview_image(),
+                    start_preview.decode_preview_image(),
                     Message::LoadedStartPreview,
                 )
             },
-            if end_preview.output == self.last_end_preview {
+            if end_preview == self.last_end_preview {
                 // No need to reload the same image
                 Task::none()
-            } else if Path::new(&end_preview.output).exists() {
-                self.last_end_preview = end_preview.output.clone();
-                Task::perform(
-                    end_preview.load_existing_preview_image(),
-                    Message::LoadedEndPreview,
-                )
             } else {
-                self.last_end_preview = end_preview.output.clone();
+                self.last_end_preview = end_preview.clone();
                 Task::perform(
-                    end_preview.create_and_load_preview_image(),
+                    end_preview.decode_preview_image(),
                     Message::LoadedEndPreview,
                 )
             },
