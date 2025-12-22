@@ -317,7 +317,7 @@ impl State {
             .on_submit(Message::Submitted);
 
         let end_slider = slider(
-            self.start + 0.9..=self.input_length,
+            self.start + 1.0..=self.input_length,
             self.end,
             Message::EndChange,
         )
