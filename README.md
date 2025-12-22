@@ -34,15 +34,16 @@ cargo build # do your thing
 
 ## main goals
 
+0. display errors on instantiation
+
 1. obsolete the CLI for creating and writing the final output
 
-2. test nix builds with other linux distrobutions
+2. test nix builds with other linux distributions
 
-3. consider caching preview images
 
-4. consider looking into macOS support
+3. consider looking into macOS support
 
-5. consider looking into windows support
+4. consider looking into windows support
 
 ## cosmic
 
@@ -50,7 +51,7 @@ cargo build # do your thing
 
 2. find workaround for git dependancy packaging problem
 
-3. update with non-cli preview image
+3. merge main and fix conflicts
 
 ## *meta*
 
