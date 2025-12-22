@@ -533,13 +533,12 @@ impl State {
 
         eprintln!("{:#?}", args);
 
-        match Command::new("ffmpeg")
+        Command::new("ffmpeg")
             .args(args)
             .spawn()
             .and_then(|mut child| child.wait())
             .and_then(|status| Ok(status.success()))
-        {
-            Ok(is_success) => {
+            .and_then(|is_success| {
                 if is_success {
                     Ok(())
                 } else {
@@ -548,9 +547,7 @@ impl State {
                         "returned unsuccessful status",
                     ))
                 }
-            }
-            Err(e) => Err(e),
-        }
+            })
     }
 
     /// makes a batch of tasks to create start and end preview images
