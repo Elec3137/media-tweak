@@ -116,10 +116,20 @@ impl Preview {
     }
 }
 
+async fn pick_file() -> Option<PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .pick_file()
+        .await
+        .and_then(|file| Some(file.path().to_path_buf()))
+}
+
 #[derive(Debug, Clone)]
 enum Message {
     InputChange(String),
     OutputChange(String),
+
+    PickInput,
+    InputPicked(Option<PathBuf>),
 
     StartChange(f64),
     EndChange(f64),
@@ -210,6 +220,19 @@ impl State {
                 Task::none()
             }
 
+            Message::PickInput => Task::perform(pick_file(), Message::InputPicked),
+            Message::InputPicked(opt) => {
+                if let Some(path) = opt
+                    && let Some(string) = path.to_str()
+                {
+                    self.input = string.to_owned();
+                    self.input_changed = true;
+                    Task::done(Message::Update)
+                } else {
+                    Task::none()
+                }
+            }
+
             Message::Submitted => Task::batch([focus_next(), self.check_inputs()]),
             Message::Update => self.check_inputs(),
 
@@ -283,6 +306,7 @@ impl State {
             .on_input(Message::InputChange)
             .on_submit(Message::Submitted)
             .id("first");
+        let input_picker = button("pick file").on_press(Message::PickInput);
 
         let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
             .default(0)
@@ -314,7 +338,7 @@ impl State {
         let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
 
         column![
-            input_field,
+            row![input_field, input_picker],
             row![text("Start time (seconds):  "), start_field, start_slider]
                 .align_y(Vertical::Center),
             row![text("End time (seconds):    "), end_field, end_slider].align_y(Vertical::Center),
