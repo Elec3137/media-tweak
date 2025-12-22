@@ -210,7 +210,7 @@ impl State {
                 Task::none()
             }
 
-            Message::Submitted => focus_next().chain(self.check_inputs()),
+            Message::Submitted => Task::batch([focus_next(), self.check_inputs()]),
             Message::Update => self.check_inputs(),
 
             Message::ToggleVideo => {
