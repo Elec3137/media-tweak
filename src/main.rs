@@ -11,7 +11,7 @@ use ffmpeg_next as ffmpeg;
 use iced::{
     Color, Element, Event, Length, Subscription, Task, Theme,
     alignment::{Horizontal, Vertical},
-    event,
+    color, event,
     keyboard::{self, Key, key},
     widget::{
         Image, button, checkbox, column,
@@ -328,8 +328,7 @@ impl State {
     fn view(&self) -> Element<'_, Message> {
         let input_field = text_input("input file", &self.input)
             .on_input(Message::InputChange)
-            .on_submit(Message::Submitted)
-            .id("first");
+            .on_submit(Message::Submitted);
         let input_picker = button("pick file").on_press(Message::PickInput);
 
         let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
@@ -603,12 +602,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .theme(Theme::custom(
             "custom",
             iced::theme::Palette {
-                background: Color::from_rgb8(0x0f, 0x0f, 0x0f),
+                background: color!(0x0f0f0f),
                 text: Color::WHITE,
-                primary: Color::from_rgb8(0, u8::MAX, u8::MAX),
-                success: Color::from_rgb8(0, u8::MAX, 0),
-                warning: Color::from_rgb8(128, 0, 0),
-                danger: Color::from_rgb8(u8::MAX, 0, 0),
+                primary: color!(0x00ffff),
+                success: color!(0x00ff00),
+                warning: color!(0x880000),
+                danger: color!(0xff0000),
             },
         ))
         .run()?;
