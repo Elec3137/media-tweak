@@ -162,6 +162,7 @@ enum Message {
 struct State {
     input: String,
     input_changed: bool,
+    input_exists: bool,
 
     input_length: f64,
 
@@ -180,6 +181,7 @@ struct State {
 
     output: String,
     output_is_generated: bool,
+    output_folder_exists: bool,
 }
 
 impl State {
@@ -198,6 +200,8 @@ impl State {
                 .update_from_input()
                 .inspect_err(|e| eprintln!("failed to inspect input media '{}': {e}", state.input))
             {
+                state.input_exists = true;
+                state.output_folder_exists = true;
                 let preview_tasks = state.create_preview_images();
                 return (state, preview_tasks);
             }
@@ -211,11 +215,24 @@ impl State {
             Message::InputChange(str) => {
                 self.input = str;
                 self.input_changed = true;
+                if let Ok(exists) = Path::new(&self.input)
+                    .try_exists()
+                    .inspect_err(|e| eprintln!("failed to check if input exists: {e}"))
+                {
+                    self.input_exists = exists;
+                }
                 Task::none()
             }
             Message::OutputChange(str) => {
                 self.output = str;
                 self.output_is_generated = false;
+                if let Some(path) = Path::new(&self.output).parent()
+                    && let Ok(exists) = path
+                        .try_exists()
+                        .inspect_err(|e| eprintln!("failed to check if input exists: {e}"))
+                {
+                    self.output_folder_exists = exists;
+                }
                 Task::none()
             }
             Message::StartChange(val) => {
@@ -329,7 +346,14 @@ impl State {
         let input_field = text_input("input file", &self.input)
             .on_input(Message::InputChange)
             .on_submit(Message::Submitted);
-        let input_picker = button("pick file").on_press(Message::PickInput);
+        let input_picker =
+            button("pick file")
+                .on_press(Message::PickInput)
+                .style(if self.input_exists {
+                    button::primary
+                } else {
+                    button::warning
+                });
 
         let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
             .default(0)
@@ -354,7 +378,13 @@ impl State {
         let output_field = text_input("output file", &self.output)
             .on_input(Message::OutputChange)
             .on_submit(Message::Submitted);
-        let output_picker = button("pick folder").on_press(Message::PickOutput);
+        let output_picker = button("pick folder").on_press(Message::PickOutput).style(
+            if self.output_folder_exists {
+                button::primary
+            } else {
+                button::warning
+            },
+        );
 
         let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
         let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
