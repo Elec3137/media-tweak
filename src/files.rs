@@ -153,19 +153,6 @@ impl Video {
     }
 }
 
-pub async fn pick_file() -> Option<PathBuf> {
-    rfd::AsyncFileDialog::new()
-        .pick_file()
-        .await
-        .and_then(|file| Some(file.path().to_path_buf()))
-}
-pub async fn pick_folder() -> Option<PathBuf> {
-    rfd::AsyncFileDialog::new()
-        .pick_folder()
-        .await
-        .and_then(|file| Some(file.path().to_path_buf()))
-}
-
 /// returns Ok((len, has_video, has_audio))
 pub fn get_video_params<P: AsRef<Path> + ?Sized>(
     path: &P,
@@ -187,4 +174,17 @@ pub fn get_video_params<P: AsRef<Path> + ?Sized>(
         .is_some();
 
     Ok((len, has_video, has_audio))
+}
+
+pub async fn pick_file() -> Option<PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .pick_file()
+        .await
+        .and_then(|file| Some(file.path().to_path_buf()))
+}
+pub async fn pick_folder() -> Option<PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .pick_folder()
+        .await
+        .and_then(|file| Some(file.path().to_path_buf()))
 }
