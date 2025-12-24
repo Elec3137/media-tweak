@@ -3,7 +3,6 @@ use std::{
     error::Error,
     ffi::OsStr,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use ffmpeg_next as ffmpeg;
@@ -417,50 +416,17 @@ impl State {
     }
 
     fn instantiate(&self) -> Result<(), impl Error> {
-        let mut args = vec!["-ss"];
-        let start = self.start.to_string();
-        args.push(&start);
+        Video {
+            seek: self.start.to_string(),
+            dur: (self.end - self.start).to_string(),
 
-        args.push("-t");
-        let duration = (self.end - self.start).to_string();
-        args.push(&duration);
+            input: self.input.clone(),
+            output: self.output.clone(),
 
-        args.push("-i");
-        args.push(&self.input);
-
-        if self.use_audio {
-            args.push("-c:a");
-            args.push("copy");
-        } else {
-            args.push("-an");
+            copy_video: self.use_video,
+            copy_audio: self.use_audio,
         }
-
-        if self.use_video {
-            args.push("-c:v");
-            args.push("copy");
-        } else {
-            args.push("-vn");
-        }
-
-        args.push(&self.output);
-
-        eprintln!("{:#?}", args);
-
-        Command::new("ffmpeg")
-            .args(args)
-            .spawn()
-            .and_then(|mut child| child.wait())
-            .and_then(|status| Ok(status.success()))
-            .and_then(|is_success| {
-                if is_success {
-                    Ok(())
-                } else {
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "returned unsuccessful status",
-                    ))
-                }
-            })
+        .create()
     }
 
     /// makes a batch of tasks to create start and end preview images

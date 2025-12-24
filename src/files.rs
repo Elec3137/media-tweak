@@ -1,4 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::{
+    error::Error,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use ffmpeg_next as ffmpeg;
 
@@ -94,6 +98,58 @@ impl Preview {
         }
 
         None
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct Video {
+    pub seek: String,
+    pub dur: String,
+
+    pub input: String,
+    pub output: String,
+
+    pub copy_video: bool,
+    pub copy_audio: bool,
+}
+
+impl Video {
+    pub fn create(self) -> Result<(), impl Error> {
+        let mut args = vec!["-ss", &self.seek, "-t", &self.dur, "-i", &self.input];
+
+        if self.copy_audio {
+            args.push("-c:a");
+            args.push("copy");
+        } else {
+            args.push("-an");
+        }
+
+        if self.copy_video {
+            args.push("-c:v");
+            args.push("copy");
+        } else {
+            args.push("-vn");
+        }
+
+        args.push(&self.output);
+
+        eprintln!("{:#?}", args);
+
+        Command::new("ffmpeg")
+            .args(args)
+            .spawn()
+            .and_then(|mut child| child.wait())
+            .and_then(|status| Ok(status.success()))
+            .and_then(|is_success| {
+                if is_success {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "returned unsuccessful status",
+                    ))
+                }
+            })
     }
 }
 
