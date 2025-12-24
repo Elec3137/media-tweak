@@ -291,7 +291,7 @@ impl State {
             row![
                 text("Press Shift-Enter, or:"),
                 instantiate_button,
-                text(format!("Duration: {} seconds", self.end - self.start))
+                text(format!("Duration: {:.3} seconds", self.end - self.start))
             ]
             .spacing(10)
             .align_y(Vertical::Center)
