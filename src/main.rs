@@ -321,7 +321,7 @@ impl State {
                     tasks.push(task);
                     tasks.push(self.create_preview_images());
                 }
-            };
+            }
 
             self.input_changed = false;
         } else if self.output.is_empty() && !self.output_is_generated {
