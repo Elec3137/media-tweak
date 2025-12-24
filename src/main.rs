@@ -254,6 +254,22 @@ impl State {
         let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
         let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
 
+        let preview_row = if self.use_video
+            && let Some(h_start) = self.start_preview.clone()
+            && let Some(h_end) = self.end_preview.clone()
+        {
+            row![
+                Image::<Handle>::new(h_start)
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+                Image::<Handle>::new(h_end)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+            ]
+        } else {
+            row![]
+        };
+
         let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
 
         column![
@@ -271,21 +287,7 @@ impl State {
             .spacing(10)
             .align_y(Vertical::Center),
             row![output_field, output_picker],
-            if self.use_video
-                && let Some(h_start) = self.start_preview.clone()
-                && let Some(h_end) = self.end_preview.clone()
-            {
-                row![
-                    Image::<Handle>::new(h_start)
-                        .width(Length::Fill)
-                        .height(Length::Fill),
-                    Image::<Handle>::new(h_end)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                ]
-            } else {
-                row![]
-            },
+            preview_row,
             row![text("Press Shift-Enter, or:"), instantiate_button]
                 .spacing(10)
                 .align_y(Vertical::Center)
