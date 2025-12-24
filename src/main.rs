@@ -27,7 +27,7 @@ use files::*;
 #[derive(Debug, Clone)]
 enum Message {
     InputChange(String),
-    OutputChange(String),
+    OutputChange(String, bool),
 
     PickInput,
     PickOutput,
@@ -108,9 +108,9 @@ impl State {
                     self.input_exists = exists;
                 }
             }
-            Message::OutputChange(str) => {
+            Message::OutputChange(str, is_generated) => {
                 self.output = str;
-                self.output_is_generated = false;
+                self.output_is_generated = is_generated;
                 if let Some(path) = Path::new(&self.output).parent()
                     && let Ok(exists) = path
                         .try_exists()
@@ -242,7 +242,7 @@ impl State {
             .on_submit(Message::Submitted);
 
         let output_field = text_input("output file", &self.output)
-            .on_input(Message::OutputChange)
+            .on_input(|str| Message::OutputChange(str, false))
             .on_submit(Message::Submitted);
         let output_picker = button("pick folder").on_press(Message::PickOutput).style(
             if self.output_folder_exists {
@@ -362,8 +362,6 @@ impl State {
     }
 
     fn generate_output_path(&mut self) -> Task<Message> {
-        self.output_is_generated = true;
-
         let input_path = PathBuf::from(&self.input);
 
         Task::done(Message::OutputChange(
@@ -390,6 +388,7 @@ impl State {
                 .into_os_string()
                 .into_string()
                 .unwrap_or_default(),
+            true,
         ))
     }
 
