@@ -250,6 +250,7 @@ impl State {
         );
 
         let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
+        let space = text("             ");
         let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
 
         let preview_row = if self.use_video
@@ -269,34 +270,33 @@ impl State {
         };
 
         let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
+        let duration_string = format!("Duration: {:.3} seconds", self.end - self.start);
 
-        column![
+        #[rustfmt::skip]
+        return column![
             row![input_field, input_picker],
+
             row![text("Start time (seconds):  "), start_field, start_slider]
                 .align_y(Vertical::Center),
-            row![text("End time (seconds):    "), end_field, end_slider].align_y(Vertical::Center),
-            row![
-                text("Video stream: "),
-                video_checkbox,
-                text("              "),
-                text("Audio stream: "),
-                audio_checkbox
-            ]
-            .spacing(10)
-            .align_y(Vertical::Center),
+
+            row![text("End time (seconds):    "), end_field, end_slider]
+                .align_y(Vertical::Center),
+
+            row![text("Video stream:"), video_checkbox, space, text("Audio stream:"), audio_checkbox]
+                .spacing(10)
+                .align_y(Vertical::Center),
+
             row![output_field, output_picker],
+
             preview_row,
-            row![
-                text("Press Shift-Enter, or:"),
-                instantiate_button,
-                text(format!("Duration: {:.3} seconds", self.end - self.start))
-            ]
-            .spacing(10)
-            .align_y(Vertical::Center)
+
+            row![text("Press Shift-Enter, or:"), instantiate_button, text(duration_string)]
+                .spacing(10)
+                .align_y(Vertical::Center)
         ]
         .spacing(20)
         .align_x(Horizontal::Center)
-        .into()
+        .into();
     }
 
     fn subscription(&self) -> Subscription<Message> {
