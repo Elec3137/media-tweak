@@ -288,9 +288,13 @@ impl State {
             .align_y(Vertical::Center),
             row![output_field, output_picker],
             preview_row,
-            row![text("Press Shift-Enter, or:"), instantiate_button]
-                .spacing(10)
-                .align_y(Vertical::Center)
+            row![
+                text("Press Shift-Enter, or:"),
+                instantiate_button,
+                text(format!("Duration: {} seconds", self.end - self.start))
+            ]
+            .spacing(10)
+            .align_y(Vertical::Center)
         ]
         .spacing(20)
         .align_x(Horizontal::Center)
