@@ -131,11 +131,10 @@ impl State {
             Message::PickOutput => return Task::perform(pick_folder(), Message::OutputPicked),
             Message::InputPicked(opt) => {
                 if let Some(path) = opt
-                    && let Some(string) = path.to_str()
+                    && let Some(str) = path.to_str()
                 {
-                    self.input = string.to_owned();
-                    self.input_changed = true;
-                    return Task::done(Message::Update);
+                    return Task::done(Message::InputChange(str.to_owned()))
+                        .chain(Task::done(Message::Update));
                 }
             }
             Message::OutputPicked(opt) => {
@@ -143,9 +142,8 @@ impl State {
                     // push instead of setting filename
                     // since picked folder is interpreted as the filename here
                     path.push(Path::new(&self.output).file_name().unwrap_or_default());
-                    if let Some(string) = path.to_str() {
-                        self.output = string.to_owned();
-                        self.output_is_generated = false;
+                    if let Some(str) = path.to_str() {
+                        return Task::done(Message::OutputChange(str.to_owned(), false));
                     }
                 }
             }
