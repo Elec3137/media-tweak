@@ -459,7 +459,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .theme(Theme::custom(
             "custom",
             iced::theme::Palette {
-                background: color!(0x0f0f0f),
+                background: color!(0x080808),
                 text: Color::WHITE,
                 primary: color!(0x00ffff),
                 success: color!(0x00ff00),
