@@ -1,7 +1,6 @@
 use std::{
     env,
     error::Error,
-    ffi::OsStr,
     path::{Path, PathBuf},
 };
 
@@ -364,32 +363,12 @@ impl State {
     fn generate_output_path(&mut self) -> Task<Message> {
         let input_path = PathBuf::from(&self.input);
 
-        Task::done(Message::OutputChange(
-            input_path
-                .with_file_name(format!(
-                    "{}_edited.{}",
-                    input_path
-                        .file_stem()
-                        .unwrap_or_else(|| OsStr::new("media"))
-                        .to_str()
-                        .unwrap_or_else(|| {
-                            eprintln!("Failed to decode file_stem");
-                            ""
-                        }),
-                    input_path
-                        .extension()
-                        .unwrap_or_else(|| OsStr::new("mkv"))
-                        .to_str()
-                        .unwrap_or_else(|| {
-                            eprintln!("Failed to decode extension");
-                            ""
-                        })
-                ))
-                .into_os_string()
-                .into_string()
-                .unwrap_or_default(),
-            true,
-        ))
+        Task::perform(modify_path(input_path), |path| {
+            Message::OutputChange(
+                path.into_os_string().into_string().unwrap_or_default(),
+                true,
+            )
+        })
     }
 
     fn instantiate(&self) -> Result<(), impl Error> {
