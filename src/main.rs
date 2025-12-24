@@ -82,26 +82,19 @@ impl State {
     fn new() -> (Self, Task<Message>) {
         ffmpeg::init().unwrap();
 
-        let mut state = State::default();
+        let state = State::default();
 
         // Uses the first argument as the input file path,
         // and creates the output file path from it
         let mut args = env::args();
         if let Some(str) = args.nth(1) {
-            state.input = str;
-
-            if let Ok(()) = state
-                .update_from_input()
-                .inspect_err(|e| eprintln!("failed to inspect input media '{}': {e}", state.input))
-            {
-                state.input_exists = true;
-                state.output_folder_exists = true;
-                let preview_tasks = state.create_preview_images();
-                return (state, preview_tasks);
-            }
+            (
+                state,
+                Task::done(Message::InputChange(str)).chain(Task::done(Message::Update)),
+            )
+        } else {
+            (state, Task::none())
         }
-
-        (state, Task::none())
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -109,10 +102,9 @@ impl State {
             Message::InputChange(str) => {
                 self.input = str;
                 self.input_changed = true;
-                if let Ok(exists) = Path::new(&self.input)
-                    .try_exists()
-                    .inspect_err(|e| eprintln!("failed to check if input exists: {e}"))
-                {
+                if let Ok(exists) = Path::new(&self.input).try_exists().inspect_err(|e| {
+                    eprintln!("failed to check if input '{}' exists: {e}", self.input)
+                }) {
                     self.input_exists = exists;
                 }
             }
@@ -273,7 +265,8 @@ impl State {
             row![
                 text("Video stream: "),
                 video_checkbox,
-                text("          Audio stream: "),
+                text("              "),
+                text("Audio stream: "),
                 audio_checkbox
             ]
             .spacing(10)
@@ -321,12 +314,15 @@ impl State {
         if self.input_changed {
             match self.update_from_input() {
                 Err(e) => eprintln!("failed to inspect input media '{}': {e}", self.input),
-                Ok(()) => tasks.push(self.create_preview_images()),
+                Ok(task) => {
+                    tasks.push(task);
+                    tasks.push(self.create_preview_images());
+                }
             };
 
             self.input_changed = false;
         } else if self.output.is_empty() && !self.output_is_generated {
-            self.generate_output_path();
+            tasks.push(self.generate_output_path());
         }
 
         Task::batch(tasks)
@@ -346,7 +342,7 @@ impl State {
         }
     }
 
-    fn update_from_input(&mut self) -> Result<(), ffmpeg::Error> {
+    fn update_from_input(&mut self) -> Result<Task<Message>, ffmpeg::Error> {
         if !self.input_exists {
             eprintln!("input_exists is set to false, not attempting to update from input");
             return Err(ffmpeg::Error::Unknown);
@@ -354,45 +350,47 @@ impl State {
 
         (self.input_length, self.use_video, self.use_audio) = get_video_params(&self.input)?;
 
-        // Generate a template output path if there is none from user input
-        if self.output.is_empty() || self.output_is_generated {
-            self.generate_output_path();
-        }
-
         // Set the end to the duration of the video
         self.end = self.input_length;
 
-        Ok(())
+        // Generate a template output path if there is none from user input
+        if self.output.is_empty() || self.output_is_generated {
+            Ok(self.generate_output_path())
+        } else {
+            Ok(Task::none())
+        }
     }
 
-    fn generate_output_path(&mut self) {
+    fn generate_output_path(&mut self) -> Task<Message> {
         self.output_is_generated = true;
 
         let input_path = PathBuf::from(&self.input);
 
-        self.output = input_path
-            .with_file_name(format!(
-                "{}_edited.{}",
-                input_path
-                    .file_stem()
-                    .unwrap_or_else(|| OsStr::new("media"))
-                    .to_str()
-                    .unwrap_or_else(|| {
-                        eprintln!("Failed to decode file_stem");
-                        ""
-                    }),
-                input_path
-                    .extension()
-                    .unwrap_or_else(|| OsStr::new("mkv"))
-                    .to_str()
-                    .unwrap_or_else(|| {
-                        eprintln!("Failed to decode extension");
-                        ""
-                    })
-            ))
-            .into_os_string()
-            .into_string()
-            .unwrap_or_default();
+        Task::done(Message::OutputChange(
+            input_path
+                .with_file_name(format!(
+                    "{}_edited.{}",
+                    input_path
+                        .file_stem()
+                        .unwrap_or_else(|| OsStr::new("media"))
+                        .to_str()
+                        .unwrap_or_else(|| {
+                            eprintln!("Failed to decode file_stem");
+                            ""
+                        }),
+                    input_path
+                        .extension()
+                        .unwrap_or_else(|| OsStr::new("mkv"))
+                        .to_str()
+                        .unwrap_or_else(|| {
+                            eprintln!("Failed to decode extension");
+                            ""
+                        })
+                ))
+                .into_os_string()
+                .into_string()
+                .unwrap_or_default(),
+        ))
     }
 
     fn instantiate(&self) -> Result<(), impl Error> {
