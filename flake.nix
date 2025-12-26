@@ -23,6 +23,7 @@
 
         nativeBuildInputs = [
           rustPlatform.bindgenHook
+          makeBinaryWrapper
           pkg-config
           ffmpeg
         ];
@@ -62,7 +63,10 @@
         postFixup = ''
           mkdir -p "$out/share/applications"
           ln -s "${desktopItem}"/share/applications/* "$out/share/applications/"
-          patchelf --set-rpath ${lib.makeLibraryPath buildInputs} $out/bin/${pname}
+
+          wrapProgram $out/bin/${pname} \
+            --prefix PATH : ${lib.makeBinPath [ ffmpeg ]} \
+            --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath buildInputs}
         '';
       };
 
