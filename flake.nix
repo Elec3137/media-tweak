@@ -72,6 +72,14 @@
 
       devShells."x86_64-linux".default = mkShell {
         inputsFrom = [ self.packages."x86_64-linux".default ];
+
+        buildInputs = [
+          cargo
+          clippy
+          rust-analyzer
+          rustfmt
+        ];
+
         LD_LIBRARY_PATH = lib.makeLibraryPath [
           wayland
           libxkbcommon
