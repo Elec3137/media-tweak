@@ -7,7 +7,7 @@
     { self, nixpkgs, ... }:
     let
       pkgs = nixpkgs.legacyPackages."x86_64-linux";
-      cargoToml = (builtins.fromTOML (builtins.readFile ./Cargo.toml));
+      cargoToml = (fromTOML (builtins.readFile ./Cargo.toml));
     in
     with pkgs;
     {
