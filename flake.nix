@@ -126,6 +126,7 @@
 
         devShells.default = craneLib.devShell {
           inputsFrom = [ crate ];
+          packages = [ pkgs.rust-analyzer ];
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
         };
       }
