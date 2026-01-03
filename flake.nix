@@ -24,6 +24,9 @@
         info = craneLib.crateNameFromCargoToml { cargoToml = ./Cargo.toml; };
         pname = info.pname;
 
+        # workaround from https://crane.dev/faq/rebuilds-bindgen.html
+        NIX_OUTPATH_USED_AS_RANDOM_SEED = "aaaaaaaaaa";
+
         nativeBuildInputs = with pkgs; [
           rustPlatform.bindgenHook
           makeBinaryWrapper
@@ -46,7 +49,12 @@
         # Build *just* the cargo dependencies, so we can reuse
         # all of that work (e.g. via cachix) when running in CI
         cargoArtifacts = craneLib.buildDepsOnly {
-          inherit src nativeBuildInputs buildInputs;
+          inherit
+            src
+            nativeBuildInputs
+            buildInputs
+            NIX_OUTPATH_USED_AS_RANDOM_SEED
+            ;
         };
 
         # Run clippy on the crate source, resuing the dependency artifacts
@@ -60,6 +68,7 @@
             src
             nativeBuildInputs
             buildInputs
+            NIX_OUTPATH_USED_AS_RANDOM_SEED
             ;
           cargoClippyExtraArgs = "-- --deny warnings";
         };
@@ -100,6 +109,7 @@
             src
             nativeBuildInputs
             buildInputs
+            NIX_OUTPATH_USED_AS_RANDOM_SEED
             ;
         };
       in
