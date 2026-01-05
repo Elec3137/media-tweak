@@ -1,6 +1,6 @@
 use std::{
-    error::Error,
     ffi::OsStr,
+    io,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -115,7 +115,7 @@ pub struct Video {
 }
 
 impl Video {
-    pub fn create(self) -> Result<(), impl Error> {
+    pub fn create(self) -> io::Result<()> {
         let mut args = vec!["-ss", &self.seek, "-t", &self.dur, "-i", &self.input];
 
         if self.copy_audio {
@@ -134,19 +134,19 @@ impl Video {
 
         args.push(&self.output);
 
-        eprintln!("{:#?}", args);
-
-        Command::new("ffmpeg")
-            .args(args)
-            .spawn()
-            .and_then(|mut child| child.wait().map(|status| status.success()))
-            .and_then(|is_success| {
-                if is_success {
-                    Ok(())
-                } else {
-                    Err(std::io::Error::other("returned unsuccessful status"))
-                }
-            })
+        if Command::new("ffmpeg")
+            .args(&args)
+            .spawn()?
+            .wait()?
+            .success()
+        {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(format!(
+                "command ffmpeg with args {:?} failed",
+                args
+            )))
+        }
     }
 }
 

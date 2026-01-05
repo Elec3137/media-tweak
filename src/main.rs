@@ -1,6 +1,7 @@
 use std::{
     env,
     error::Error,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -375,7 +376,7 @@ impl State {
         })
     }
 
-    fn instantiate(&self) -> Result<(), impl Error> {
+    fn instantiate(&self) -> io::Result<()> {
         Video {
             seek: self.start.to_string(),
             dur: (self.end - self.start).to_string(),
