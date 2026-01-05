@@ -142,7 +142,9 @@ impl Video {
                     if status.success() {
                         None
                     } else {
-                        Some(format!("ffmpeg returned nonzero status: {status}"))
+                        Some(format!(
+                            "ffmpeg returned {status}. Check stderr for full error"
+                        ))
                     }
                 }
             },
