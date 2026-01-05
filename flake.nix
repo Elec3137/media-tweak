@@ -1,34 +1,40 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+
+    crane.url = "github:ipetkov/crane";
+
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs =
-    { self, nixpkgs, ... }:
-    let
-      pkgs = nixpkgs.legacyPackages."x86_64-linux";
-      cargoToml = (fromTOML (builtins.readFile ./Cargo.toml));
-    in
-    with pkgs;
     {
-      packages."x86_64-linux".default = rustPlatform.buildRustPackage rec {
-        pname = cargoToml.package.name;
-        version = cargoToml.package.version;
+      self,
+      nixpkgs,
+      crane,
+      flake-utils,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+        craneLib = crane.mkLib pkgs;
+        src = craneLib.cleanCargoSource ./.;
+        info = craneLib.crateNameFromCargoToml { cargoToml = ./Cargo.toml; };
+        pname = info.pname;
 
-        src = ./.;
+        # workaround from https://crane.dev/faq/rebuilds-bindgen.html
+        NIX_OUTPATH_USED_AS_RANDOM_SEED = "aaaaaaaaaa";
 
-        cargoDeps = rustPlatform.importCargoLock {
-          lockFile = "${src}/Cargo.lock";
-        };
-
-        nativeBuildInputs = [
+        nativeBuildInputs = with pkgs; [
           rustPlatform.bindgenHook
           makeBinaryWrapper
           pkg-config
           ffmpeg
         ];
 
-        buildInputs = [
+        buildInputs = with pkgs; [
           ffmpeg
 
           libxkbcommon
@@ -40,50 +46,89 @@
           xorg.libXi
         ];
 
-        desktopItem = makeDesktopItem {
-          name = pname;
-          desktopName = pname;
-          mimeTypes = [
-            "video/matroshka"
-            "video/webm"
-            "video/mp4"
-
-            "audio/matroshka"
-            "audio/webm"
-            "audio/mp4"
-
-            "audio/aac"
-            "audio/flac"
-            "audio/ogg"
-          ];
-          icon = "image-x-generic";
-          exec = pname;
+        # Build *just* the cargo dependencies, so we can reuse
+        # all of that work (e.g. via cachix) when running in CI
+        cargoArtifacts = craneLib.buildDepsOnly {
+          inherit
+            src
+            nativeBuildInputs
+            buildInputs
+            NIX_OUTPATH_USED_AS_RANDOM_SEED
+            ;
         };
 
-        postFixup = ''
-          mkdir -p "$out/share/applications"
-          ln -s "${desktopItem}"/share/applications/* "$out/share/applications/"
+        # Run clippy on the crate source, resuing the dependency artifacts
+        # (e.g. from build scripts or proc-macros) from above.
+        #
+        # Note that this is done as a separate derivation so it
+        # does not impact building just the crate by itself.
+        crate-clippy = craneLib.cargoClippy {
+          inherit
+            cargoArtifacts
+            src
+            nativeBuildInputs
+            buildInputs
+            NIX_OUTPATH_USED_AS_RANDOM_SEED
+            ;
+          cargoClippyExtraArgs = "-- --deny warnings";
+        };
 
-          wrapProgram $out/bin/${pname} \
-            --prefix PATH : ${lib.makeBinPath [ ffmpeg ]} \
-            --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath buildInputs}
-        '';
-      };
+        # Build the actual crate itself, reusing the dependency
+        # artifacts from above.
+        crate = craneLib.buildPackage rec {
+          desktopItem = pkgs.makeDesktopItem {
+            name = pname;
+            desktopName = pname;
+            mimeTypes = [
+              "video/matroshka"
+              "video/webm"
+              "video/mp4"
 
-      devShells."x86_64-linux".default = mkShell {
-        inputsFrom = [ self.packages."x86_64-linux".default ];
+              "audio/matroshka"
+              "audio/webm"
+              "audio/mp4"
 
-        buildInputs = [
-          cargo
-          clippy
-          rust-analyzer
-          rustfmt
-        ];
+              "audio/aac"
+              "audio/flac"
+              "audio/ogg"
+            ];
+            icon = "image-x-generic";
+            exec = pname;
+          };
 
-        LD_LIBRARY_PATH = lib.makeLibraryPath [
-          wayland
-          libxkbcommon
-        ];
-      };
-    };
+          postFixup = ''
+            mkdir -p "$out/share/applications"
+            ln -s "${desktopItem}"/share/applications/* "$out/share/applications/"
+
+            wrapProgram $out/bin/${pname} \
+              --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]} \
+              --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath buildInputs}
+          '';
+          inherit
+            cargoArtifacts
+            src
+            nativeBuildInputs
+            buildInputs
+            NIX_OUTPATH_USED_AS_RANDOM_SEED
+            ;
+        };
+      in
+      {
+        packages.default = crate;
+
+        checks = {
+          inherit
+            # Build the crate as part of `nix flake check` for convenience
+            crate
+            crate-clippy
+            ;
+        };
+
+        devShells.default = craneLib.devShell {
+          inputsFrom = [ crate ];
+          packages = [ pkgs.rust-analyzer ];
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
+        };
+      }
+    );
 }
