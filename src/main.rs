@@ -49,7 +49,7 @@ enum Message {
     Event(Event),
 
     Instantiate,
-    InstantiateFinished(bool),
+    InstantiateFinished(Option<String>),
 }
 
 #[derive(Debug, Default)]
@@ -76,6 +76,9 @@ struct State {
     output: String,
     output_is_generated: bool,
     output_folder_exists: bool,
+
+    error: String,
+    status: String,
 }
 
 impl State {
@@ -197,12 +200,18 @@ impl State {
                 }
             }
 
-            Message::Instantiate => return self.instantiate(),
-            Message::InstantiateFinished(is_successful) => {
-                if is_successful {
+            Message::Instantiate => {
+                self.error.clear();
+                self.status = "Loading...".to_string();
+                return self.instantiate();
+            }
+            Message::InstantiateFinished(error_opt) => match error_opt {
+                None => {
+                    self.status = "Finished".to_string();
                     return window::latest().and_then(window::close);
                 }
-            }
+                Some(error) => self.error = error,
+            },
         }
 
         Task::none()
@@ -272,6 +281,14 @@ impl State {
             row![]
         };
 
+        let status_display = if !self.error.is_empty() {
+            row![text(&self.error).style(text::danger)]
+        } else if !self.status.is_empty() {
+            row![text(&self.status).style(text::primary)]
+        } else {
+            row![]
+        };
+
         let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
         let duration_string = format!("Duration: {:.3} seconds", self.end - self.start);
 
@@ -292,6 +309,8 @@ impl State {
             row![output_field, output_picker],
 
             preview_row,
+
+            status_display,
 
             row![text("Press Shift-Enter, or:"), instantiate_button, text(duration_string)]
                 .spacing(10)

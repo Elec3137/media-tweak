@@ -115,7 +115,7 @@ pub struct Video {
 }
 
 impl Video {
-    pub async fn create(self) -> bool {
+    pub async fn create(self) -> Option<String> {
         let mut args = vec!["-ss", &self.seek, "-t", &self.dur, "-i", &self.input];
 
         if self.copy_audio {
@@ -134,12 +134,18 @@ impl Video {
 
         args.push(&self.output);
 
-        if let Ok(mut child) = Command::new("ffmpeg").args(&args).spawn()
-            && let Ok(status) = child.wait().await
-        {
-            status.success()
-        } else {
-            false
+        match Command::new("ffmpeg").args(&args).spawn() {
+            Err(e) => Some(e.to_string()),
+            Ok(mut child) => match child.wait().await {
+                Err(e) => Some(e.to_string()),
+                Ok(status) => {
+                    if status.success() {
+                        None
+                    } else {
+                        Some(format!("ffmpeg returned nonzero status: {status}"))
+                    }
+                }
+            },
         }
     }
 }
