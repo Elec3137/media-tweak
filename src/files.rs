@@ -1,9 +1,9 @@
 use std::{
     ffi::OsStr,
-    io,
     path::{Path, PathBuf},
-    process::Command,
 };
+
+use tokio::process::Command;
 
 use ffmpeg_next as ffmpeg;
 
@@ -115,7 +115,7 @@ pub struct Video {
 }
 
 impl Video {
-    pub fn create(self) -> io::Result<()> {
+    pub async fn create(self) -> bool {
         let mut args = vec!["-ss", &self.seek, "-t", &self.dur, "-i", &self.input];
 
         if self.copy_audio {
@@ -134,18 +134,12 @@ impl Video {
 
         args.push(&self.output);
 
-        if Command::new("ffmpeg")
-            .args(&args)
-            .spawn()?
-            .wait()?
-            .success()
+        if let Ok(mut child) = Command::new("ffmpeg").args(&args).spawn()
+            && let Ok(status) = child.wait().await
         {
-            Ok(())
+            status.success()
         } else {
-            Err(std::io::Error::other(format!(
-                "command ffmpeg with args {:?} failed",
-                args
-            )))
+            false
         }
     }
 }

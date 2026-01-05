@@ -1,7 +1,6 @@
 use std::{
     env,
     error::Error,
-    io,
     path::{Path, PathBuf},
 };
 
@@ -50,6 +49,7 @@ enum Message {
     Event(Event),
 
     Instantiate,
+    InstantiateFinished(bool),
 }
 
 #[derive(Debug, Default)]
@@ -197,10 +197,12 @@ impl State {
                 }
             }
 
-            Message::Instantiate => match self.instantiate() {
-                Err(e) => eprintln!("failed to instantiate: {e}"),
-                Ok(()) => return window::latest().and_then(window::close),
-            },
+            Message::Instantiate => return self.instantiate(),
+            Message::InstantiateFinished(is_successful) => {
+                if is_successful {
+                    return window::latest().and_then(window::close);
+                }
+            }
         }
 
         Task::none()
@@ -376,18 +378,21 @@ impl State {
         })
     }
 
-    fn instantiate(&self) -> io::Result<()> {
-        Video {
-            seek: self.start.to_string(),
-            dur: (self.end - self.start).to_string(),
+    fn instantiate(&self) -> Task<Message> {
+        Task::perform(
+            Video {
+                seek: self.start.to_string(),
+                dur: (self.end - self.start).to_string(),
 
-            input: self.input.clone(),
-            output: self.output.clone(),
+                input: self.input.clone(),
+                output: self.output.clone(),
 
-            copy_video: self.use_video,
-            copy_audio: self.use_audio,
-        }
-        .create()
+                copy_video: self.use_video,
+                copy_audio: self.use_audio,
+            }
+            .create(),
+            Message::InstantiateFinished,
+        )
     }
 
     /// makes a batch of tasks to create start and end preview images
