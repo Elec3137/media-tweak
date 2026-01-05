@@ -139,16 +139,12 @@ impl Video {
         Command::new("ffmpeg")
             .args(args)
             .spawn()
-            .and_then(|mut child| child.wait())
-            .and_then(|status| Ok(status.success()))
+            .and_then(|mut child| child.wait().map(|status| status.success()))
             .and_then(|is_success| {
                 if is_success {
                     Ok(())
                 } else {
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "returned unsuccessful status",
-                    ))
+                    Err(std::io::Error::other("returned unsuccessful status"))
                 }
             })
     }
@@ -166,13 +162,11 @@ pub fn get_video_params<P: AsRef<Path> + ?Sized>(
 
     let mut streams = context.streams();
 
-    let has_video = streams
-        .find(|stream| stream.parameters().medium() == ffmpeg::media::Type::Video)
-        .is_some();
+    let has_video =
+        streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Video);
 
-    let has_audio = streams
-        .find(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio)
-        .is_some();
+    let has_audio =
+        streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio);
 
     Ok((len, has_video, has_audio))
 }
@@ -181,13 +175,13 @@ pub async fn pick_file() -> Option<PathBuf> {
     rfd::AsyncFileDialog::new()
         .pick_file()
         .await
-        .and_then(|file| Some(file.path().to_path_buf()))
+        .map(|file| file.path().to_path_buf())
 }
 pub async fn pick_folder() -> Option<PathBuf> {
     rfd::AsyncFileDialog::new()
         .pick_folder()
         .await
-        .and_then(|file| Some(file.path().to_path_buf()))
+        .map(|file| file.path().to_path_buf())
 }
 
 /// returns a path with a different filename
