@@ -30,7 +30,6 @@
             rustPlatform.bindgenHook
             makeBinaryWrapper
             pkg-config
-            ffmpeg
           ];
 
           buildInputs = with pkgs; [
