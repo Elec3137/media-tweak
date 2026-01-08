@@ -290,7 +290,7 @@ impl State {
         };
 
         let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
-        let duration_string = format!("Duration: {:.3} seconds", self.end - self.start);
+        let duration_string = format!("Duration: {} seconds", self.end - self.start);
 
         #[rustfmt::skip]
         return column![
