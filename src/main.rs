@@ -42,8 +42,8 @@ enum Message {
 
     Update,
 
-    LoadedStartPreview(Option<Vec<u8>>),
-    LoadedEndPreview(Option<Vec<u8>>),
+    LoadedStartPreview(Result<Vec<u8>, String>),
+    LoadedEndPreview(Result<Vec<u8>, String>),
 
     Event(Event),
 
@@ -157,14 +157,15 @@ impl State {
             Message::ToggleVideo => self.use_video = !self.use_video,
             Message::ToggleAudio => self.use_audio = !self.use_audio,
 
-            Message::LoadedStartPreview(Some(bytes)) => {
+            Message::LoadedStartPreview(Ok(bytes)) => {
                 self.start_preview = Some(Handle::from_bytes(bytes))
             }
-            Message::LoadedEndPreview(Some(bytes)) => {
+            Message::LoadedEndPreview(Ok(bytes)) => {
                 self.end_preview = Some(Handle::from_bytes(bytes))
             }
-            Message::LoadedStartPreview(None) => {}
-            Message::LoadedEndPreview(None) => {}
+            Message::LoadedStartPreview(Err(e)) | Message::LoadedEndPreview(Err(e)) => {
+                eprintln!("{}", e)
+            }
 
             Message::Event(event) => {
                 if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
