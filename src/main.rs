@@ -1,6 +1,5 @@
 use std::{
     env,
-    error::Error,
     path::{Path, PathBuf},
 };
 
@@ -49,7 +48,7 @@ enum Message {
     Event(Event),
 
     Instantiate,
-    InstantiateFinished(Option<String>),
+    InstantiateFinished(Result<(), String>),
 }
 
 #[derive(Debug, Default)]
@@ -205,12 +204,12 @@ impl State {
                 self.status = "Loading...".to_string();
                 return self.instantiate();
             }
-            Message::InstantiateFinished(error_opt) => match error_opt {
-                None => {
+            Message::InstantiateFinished(result) => match result {
+                Ok(()) => {
                     self.status = "Finished".to_string();
                     return window::latest().and_then(window::close);
                 }
-                Some(error) => self.error = error,
+                Err(e) => self.error = e,
             },
         }
 
