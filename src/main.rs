@@ -460,7 +460,7 @@ impl State {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), iced::Error> {
     iced::application(State::new, State::update, State::view)
         .subscription(State::subscription)
         .theme(Theme::custom(
