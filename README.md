@@ -34,12 +34,9 @@ cargo build # do your thing
 
 ## main goals
 
-0. display errors on instantiation
-
 1. obsolete the CLI for creating and writing the final output
 
 2. test nix builds with other linux distributions
-
 
 3. consider looking into macOS support
 
