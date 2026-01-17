@@ -5,18 +5,18 @@ use std::{
 
 use ffmpeg_next as ffmpeg;
 
-use iced::{
-    Color, Element, Event, Length, Subscription, Task, Theme,
-    alignment::{Horizontal, Vertical},
-    color, event,
-    keyboard::{self, Key, key},
-    widget::{
-        Image, button, checkbox, column,
-        image::Handle,
-        operation::{self, focus_next},
-        row, slider, text, text_input,
+use cosmic::{
+    Action, ApplicationExt, Element, Task,
+    app::Settings,
+    iced::{
+        Event, Length, Subscription,
+        alignment::{Horizontal, Vertical},
+        event,
+        keyboard::{self, Key, key},
+        widget::{Image, checkbox, column, image::Handle, row, slider, text_input},
+        window,
     },
-    window,
+    iced_widget::{button, focus_next, focus_previous, text},
 };
 
 mod files;
@@ -51,8 +51,10 @@ enum Message {
     InstantiateFinished(Result<(), String>),
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct State {
+    core: cosmic::Core,
+
     input: String,
     input_changed: bool,
     input_exists: bool,
@@ -80,26 +82,45 @@ struct State {
     status: String,
 }
 
-impl State {
-    fn new() -> (Self, Task<Message>) {
-        ffmpeg::init().unwrap();
+impl cosmic::Application for State {
+    type Executor = cosmic::executor::Default;
+    type Flags = ();
+    type Message = Message;
 
-        let state = State::default();
+    const APP_ID: &'static str = "dev.electria.media-tweak";
 
-        // Uses the first argument as the input file path,
-        // and creates the output file path from it
-        let mut args = env::args();
-        if let Some(str) = args.nth(1) {
-            (
-                state,
-                Task::done(Message::InputChange(str)).chain(Task::done(Message::Update)),
-            )
-        } else {
-            (state, Task::none())
-        }
+    fn core(&self) -> &cosmic::Core {
+        &self.core
+    }
+    fn core_mut(&mut self) -> &mut cosmic::Core {
+        &mut self.core
     }
 
-    fn update(&mut self, message: Message) -> Task<Message> {
+    fn init(
+        _core: cosmic::Core,
+        _flags: Self::Flags,
+    ) -> (Self, Task<cosmic::Action<Self::Message>>) {
+        ffmpeg::init().unwrap();
+
+        let mut state = State::default();
+        let mut tasks = Vec::new();
+
+        // Uses the first argument as the input file path if it exists
+        let mut args = env::args();
+        if let Some(str) = args.nth(1) {
+            tasks.push(
+                Task::done(Message::InputChange(str))
+                    .chain(Task::done(Message::Update))
+                    .map(Action::App),
+            );
+        }
+
+        tasks.push(state.set_window_title(Self::APP_ID.to_string()));
+
+        (state, Task::batch(tasks))
+    }
+
+    fn update(&mut self, message: Message) -> Task<Action<Message>> {
         match message {
             Message::InputChange(str) => {
                 self.input = str;
@@ -130,14 +151,19 @@ impl State {
                 self.number_changed = true;
             }
 
-            Message::PickInput => return Task::perform(pick_file(), Message::InputPicked),
-            Message::PickOutput => return Task::perform(pick_folder(), Message::OutputPicked),
+            Message::PickInput => {
+                return Task::perform(pick_file(), Message::InputPicked).map(Action::App);
+            }
+            Message::PickOutput => {
+                return Task::perform(pick_folder(), Message::OutputPicked).map(Action::App);
+            }
             Message::InputPicked(opt) => {
                 if let Some(path) = opt
                     && let Some(str) = path.to_str()
                 {
                     return Task::done(Message::InputChange(str.to_owned()))
-                        .chain(Task::done(Message::Update));
+                        .chain(Task::done(Message::Update))
+                        .map(Action::App);
                 }
             }
             Message::OutputPicked(opt) => {
@@ -146,7 +172,8 @@ impl State {
                     // since picked folder is interpreted as the filename here
                     path.push(Path::new(&self.output).file_name().unwrap_or_default());
                     if let Some(str) = path.to_str() {
-                        return Task::done(Message::OutputChange(str.to_owned(), false));
+                        return Task::done(Message::OutputChange(str.to_owned(), false))
+                            .map(Action::App);
                     }
                 }
             }
@@ -173,23 +200,27 @@ impl State {
                         // input field cycling
                         Key::Named(key::Named::Tab) => {
                             if modifiers.shift() {
-                                return operation::focus_previous();
+                                return focus_previous();
                             } else {
-                                return operation::focus_next();
+                                return focus_next();
                             }
                         }
 
-                        Key::Character("v") => return Task::done(Message::ToggleVideo),
-                        Key::Character("a") => return Task::done(Message::ToggleAudio),
+                        Key::Character("v") => {
+                            return Task::done(Message::ToggleVideo).map(Action::App);
+                        }
+                        Key::Character("a") => {
+                            return Task::done(Message::ToggleAudio).map(Action::App);
+                        }
 
                         // early-exit hotkeys
                         Key::Named(key::Named::Escape) | Key::Character("q") => {
-                            return window::latest().and_then(window::close);
+                            return window::close(self.core.main_window_id().unwrap());
                         }
 
                         Key::Named(key::Named::Enter) => {
                             if modifiers.shift() {
-                                return Task::done(Message::Instantiate);
+                                return Task::done(Message::Instantiate).map(Action::App);
                             } else {
                                 return focus_next();
                             }
@@ -208,7 +239,7 @@ impl State {
             Message::InstantiateFinished(result) => match result {
                 Ok(()) => {
                     self.status = "Finished".to_string();
-                    return window::latest().and_then(window::close);
+                    return window::close(self.core.main_window_id().unwrap());
                 }
                 Err(e) => self.error = e,
             },
@@ -221,14 +252,7 @@ impl State {
         let input_field = text_input("input file", &self.input)
             .on_input(Message::InputChange)
             .on_submit(Message::Submitted);
-        let input_picker =
-            button("pick file")
-                .on_press(Message::PickInput)
-                .style(if self.input_exists {
-                    button::primary
-                } else {
-                    button::warning
-                });
+        let input_picker = button("pick file").on_press(Message::PickInput);
 
         let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
             .default(0)
@@ -253,17 +277,11 @@ impl State {
         let output_field = text_input("output file", &self.output)
             .on_input(|str| Message::OutputChange(str, false))
             .on_submit(Message::Submitted);
-        let output_picker = button("pick folder").on_press(Message::PickOutput).style(
-            if self.output_folder_exists {
-                button::primary
-            } else {
-                button::warning
-            },
-        );
+        let output_picker = button("pick folder").on_press(Message::PickOutput);
 
-        let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
+        let video_checkbox = checkbox("", self.use_video).on_toggle(|_| Message::ToggleVideo);
         let space = text("             ");
-        let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
+        let audio_checkbox = checkbox("", self.use_audio).on_toggle(|_| Message::ToggleAudio);
 
         let preview_row = if self.use_video
             && let Some(h_start) = self.start_preview.clone()
@@ -282,9 +300,9 @@ impl State {
         };
 
         let status_display = if !self.error.is_empty() {
-            row![text(&self.error).style(text::danger)]
+            row![text(&self.error)]
         } else if !self.status.is_empty() {
-            row![text(&self.status).style(text::primary)]
+            row![text(&self.status)]
         } else {
             row![]
         };
@@ -324,8 +342,10 @@ impl State {
     fn subscription(&self) -> Subscription<Message> {
         event::listen().map(Message::Event)
     }
+}
 
-    fn check_inputs(&mut self) -> Task<Message> {
+impl State {
+    fn check_inputs(&mut self) -> Task<Action<Message>> {
         let mut tasks = Vec::new();
 
         if self.number_changed {
@@ -367,7 +387,7 @@ impl State {
         }
     }
 
-    fn update_from_input(&mut self) -> Result<Task<Message>, ffmpeg::Error> {
+    fn update_from_input(&mut self) -> Result<Task<Action<Message>>, ffmpeg::Error> {
         if !self.input_exists {
             eprintln!("input_exists is set to false, not attempting to update from input");
             return Err(ffmpeg::Error::Unknown);
@@ -386,7 +406,7 @@ impl State {
         }
     }
 
-    fn generate_output_path(&mut self) -> Task<Message> {
+    fn generate_output_path(&mut self) -> Task<Action<Message>> {
         let input_path = PathBuf::from(&self.input);
 
         Task::perform(modify_path(input_path), |path| {
@@ -395,9 +415,10 @@ impl State {
                 true,
             )
         })
+        .map(Action::App)
     }
 
-    fn instantiate(&self) -> Task<Message> {
+    fn instantiate(&self) -> Task<Action<Message>> {
         Task::perform(
             Video {
                 seek: self.start.to_string(),
@@ -412,11 +433,12 @@ impl State {
             .create(),
             Message::InstantiateFinished,
         )
+        .map(Action::App)
     }
 
     /// makes a batch of tasks to create start and end preview images
     /// no effect if use_video is false
-    fn create_preview_images(&mut self) -> Task<Message> {
+    fn create_preview_images(&mut self) -> Task<Action<Message>> {
         if !self.use_video {
             return Task::none();
         }
@@ -457,24 +479,12 @@ impl State {
                 )
             },
         ])
+        .map(Action::App)
     }
 }
 
-fn main() -> Result<(), iced::Error> {
-    iced::application(State::new, State::update, State::view)
-        .subscription(State::subscription)
-        .theme(Theme::custom(
-            "custom",
-            iced::theme::Palette {
-                background: color!(0x080808),
-                text: Color::WHITE,
-                primary: color!(0x00ffff),
-                success: color!(0x00ff00),
-                warning: color!(0x880000),
-                danger: color!(0xff0000),
-            },
-        ))
-        .run()?;
+fn main() -> Result<(), cosmic::iced::Error> {
+    cosmic::app::run::<State>(Settings::default().exit_on_close(true).is_daemon(false), ())?;
 
     Ok(())
 }
