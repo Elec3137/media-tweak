@@ -46,9 +46,9 @@ cargo build # do your thing
 
 1. fix window decorations (should be able to drag it, close by clicking on the X)
 
-2. find workaround for git dependancy packaging problem
+2. remove extra iced dependancy for "image" feature
 
-3. merge main and fix conflicts
+3. fix button and text styles
 
 ## *meta*
 
