@@ -27,6 +27,7 @@
           NIX_OUTPATH_USED_AS_RANDOM_SEED = "aaaaaaaaaa";
 
           nativeBuildInputs = with pkgs; [
+            libcosmicAppHook
             rustPlatform.bindgenHook
             makeBinaryWrapper
             pkg-config
@@ -34,14 +35,6 @@
 
           buildInputs = with pkgs; [
             ffmpeg
-
-            libxkbcommon
-
-            wayland
-
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXi
           ];
         };
 
@@ -84,8 +77,7 @@
               ln -s "${desktopItem}"/share/applications/* "$out/share/applications/"
 
               wrapProgram $out/bin/${pname} \
-                --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]} \
-                --prefix LD_LIBRARY_PATH : ${LD_LIBRARY_PATH}
+                --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]}
             '';
           }
         );
