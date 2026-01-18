@@ -27,5 +27,7 @@ features = [
     "wayland",
     # GPU-accelerated rendering
     "wgpu",
+
+    "multi-window",
 ]
 default-features = false

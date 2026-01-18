@@ -17,6 +17,7 @@ use cosmic::{
         window,
     },
     iced_widget::{button, focus_next, focus_previous, text},
+    theme, widget,
 };
 
 mod files;
@@ -115,7 +116,7 @@ impl cosmic::Application for State {
             );
         }
 
-        tasks.push(state.set_window_title(Self::APP_ID.to_string()));
+        state.set_header_title(Self::APP_ID.to_string());
 
         (state, Task::batch(tasks))
     }
@@ -331,6 +332,16 @@ impl cosmic::Application for State {
         .into();
     }
 
+    fn view_window(&self, id: window::Id) -> Element<'_, Self::Message> {
+        if id != window::Id::RESERVED {
+            println!("id: {id}");
+        }
+
+        widget::container(self.view())
+            .class(theme::Container::WindowBackground)
+            .into()
+    }
+
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
         let video_checkbox =
             checkbox("use video", self.use_video).on_toggle(|_| Message::ToggleVideo);
@@ -489,7 +500,12 @@ impl State {
 }
 
 fn main() -> Result<(), cosmic::iced::Error> {
-    cosmic::app::run::<State>(Settings::default().exit_on_close(true).is_daemon(false), ())?;
+    cosmic::app::run::<State>(
+        Settings::default()
+            .is_daemon(false)
+            .client_decorations(false),
+        (),
+    )?;
 
     Ok(())
 }
