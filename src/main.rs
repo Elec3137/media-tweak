@@ -279,10 +279,6 @@ impl cosmic::Application for State {
             .on_submit(Message::Submitted);
         let output_picker = button("pick folder").on_press(Message::PickOutput);
 
-        let video_checkbox = checkbox("", self.use_video).on_toggle(|_| Message::ToggleVideo);
-        let space = text("             ");
-        let audio_checkbox = checkbox("", self.use_audio).on_toggle(|_| Message::ToggleAudio);
-
         let preview_row = if self.use_video
             && let Some(h_start) = self.start_preview.clone()
             && let Some(h_end) = self.end_preview.clone()
@@ -320,10 +316,6 @@ impl cosmic::Application for State {
             row![text("End time (seconds):    "), end_field, end_slider]
                 .align_y(Vertical::Center),
 
-            row![text("Video stream:"), video_checkbox, space, text("Audio stream:"), audio_checkbox]
-                .spacing(10)
-                .align_y(Vertical::Center),
-
             row![output_field, output_picker],
 
             preview_row,
@@ -337,6 +329,19 @@ impl cosmic::Application for State {
         .spacing(20)
         .align_x(Horizontal::Center)
         .into();
+    }
+
+    fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
+        let video_checkbox =
+            checkbox("use video", self.use_video).on_toggle(|_| Message::ToggleVideo);
+        let audio_checkbox =
+            checkbox("use audio", self.use_audio).on_toggle(|_| Message::ToggleAudio);
+
+        vec![
+            video_checkbox.into(),
+            text("     ").into(),
+            audio_checkbox.into(),
+        ]
     }
 
     fn subscription(&self) -> Subscription<Message> {
