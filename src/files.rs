@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tokio::process::Command;
+use smol::process::Command;
 
 use ffmpeg_next as ffmpeg;
 
@@ -134,7 +134,7 @@ impl Video {
 
         match Command::new("ffmpeg").args(&args).spawn() {
             Err(e) => Err(e.to_string()),
-            Ok(mut child) => match child.wait().await {
+            Ok(mut child) => match child.status().await {
                 Err(e) => Err(e.to_string()),
                 Ok(status) => {
                     if status.success() {
