@@ -10,9 +10,9 @@ use iced::{
     alignment::{Horizontal, Vertical},
     color, event,
     keyboard::{self, Key, key},
+    task::{self},
     widget::{
-        Image, button, checkbox, column,
-        image::Handle,
+        Image, button, checkbox, column, image,
         operation::{self, focus_next},
         row, slider, text, text_input,
     },
@@ -34,6 +34,8 @@ enum Message {
 
     StartChange(f64),
     EndChange(f64),
+    SliderStartChange(f64),
+    SliderEndChange(f64),
 
     ToggleVideo,
     ToggleAudio,
@@ -69,8 +71,14 @@ struct State {
     last_start_preview: Preview,
     last_end_preview: Preview,
 
-    start_preview: Option<Handle>,
-    end_preview: Option<Handle>,
+    last_start_preview_bytes: Vec<u8>,
+    last_end_preview_bytes: Vec<u8>,
+
+    start_preview: Option<image::Handle>,
+    end_preview: Option<image::Handle>,
+
+    start_preview_task_handle: Option<task::Handle>,
+    end_preview_task_handle: Option<task::Handle>,
 
     output: String,
     output_is_generated: bool,
@@ -130,6 +138,17 @@ impl State {
                 self.number_changed = true;
             }
 
+            Message::SliderStartChange(val) => {
+                self.start = val;
+                self.number_changed = true;
+                return self.check_inputs();
+            }
+            Message::SliderEndChange(val) => {
+                self.end = val;
+                self.number_changed = true;
+                return self.check_inputs();
+            }
+
             Message::PickInput => return Task::perform(pick_file(), Message::InputPicked),
             Message::PickOutput => return Task::perform(pick_folder(), Message::OutputPicked),
             Message::InputPicked(opt) => {
@@ -158,10 +177,16 @@ impl State {
             Message::ToggleAudio => self.use_audio = !self.use_audio,
 
             Message::LoadedStartPreview(Ok(bytes)) => {
-                self.start_preview = Some(Handle::from_bytes(bytes))
+                if bytes != self.last_start_preview_bytes {
+                    self.last_start_preview_bytes = bytes.clone();
+                    self.start_preview = Some(image::Handle::from_bytes(bytes))
+                }
             }
             Message::LoadedEndPreview(Ok(bytes)) => {
-                self.end_preview = Some(Handle::from_bytes(bytes))
+                if bytes != self.last_end_preview_bytes {
+                    self.last_end_preview_bytes = bytes.clone();
+                    self.end_preview = Some(image::Handle::from_bytes(bytes))
+                }
             }
             Message::LoadedStartPreview(Err(e)) | Message::LoadedEndPreview(Err(e)) => {
                 eprintln!("{}", e)
@@ -230,9 +255,12 @@ impl State {
                     button::warning
                 });
 
-        let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
-            .default(0)
-            .on_release(Message::Update);
+        let start_slider = slider(
+            0_f64..=self.end - 1.0,
+            self.start,
+            Message::SliderStartChange,
+        )
+        .default(0);
         let start_field = text_input("start", &self.start.to_string())
             .on_input(|str| Message::StartChange(str.parse().unwrap_or_default()))
             .width(200)
@@ -241,10 +269,9 @@ impl State {
         let end_slider = slider(
             self.start + 1.0..=self.input_length,
             self.end,
-            Message::EndChange,
+            Message::SliderEndChange,
         )
-        .default(self.input_length)
-        .on_release(Message::Update);
+        .default(self.input_length);
         let end_field = text_input("end", &self.end.to_string())
             .on_input(|str| Message::EndChange(str.parse().unwrap_or_default()))
             .width(200)
@@ -270,10 +297,10 @@ impl State {
             && let Some(h_end) = self.end_preview.clone()
         {
             row![
-                Image::<Handle>::new(h_start)
+                Image::<image::Handle>::new(h_start)
                     .width(Length::Fill)
                     .height(Length::Fill),
-                Image::<Handle>::new(h_end)
+                Image::<image::Handle>::new(h_end)
                     .width(Length::Fill)
                     .height(Length::Fill)
             ]
@@ -441,20 +468,34 @@ impl State {
                 Task::none()
             } else {
                 self.last_start_preview = start_preview.clone();
-                Task::perform(
+                let (task, handle) = Task::perform(
                     start_preview.decode_preview_image(),
                     Message::LoadedStartPreview,
                 )
+                .abortable();
+                if let Some(extra_handle) = &self.start_preview_task_handle {
+                    extra_handle.abort();
+                }
+                self.start_preview_task_handle = Some(handle);
+
+                task
             },
             if end_preview == self.last_end_preview {
                 // No need to reload the same image
                 Task::none()
             } else {
                 self.last_end_preview = end_preview.clone();
-                Task::perform(
+                let (task, handle) = Task::perform(
                     end_preview.decode_preview_image(),
                     Message::LoadedEndPreview,
                 )
+                .abortable();
+                if let Some(extra_handle) = &self.end_preview_task_handle {
+                    extra_handle.abort();
+                }
+                self.end_preview_task_handle = Some(handle);
+
+                task
             },
         ])
     }
