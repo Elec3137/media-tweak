@@ -46,9 +46,7 @@ cargo build # do your thing
 
 1. fix window decorations (should be able to drag it, close by clicking on the X)
 
-2. remove extra iced dependancy for "image" feature
-
-3. fix button and text styles
+2. fix button and text styles
 
 ## *meta*
 
