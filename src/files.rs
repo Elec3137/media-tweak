@@ -92,20 +92,16 @@ impl Preview {
                 .run(&decoded, &mut rgb_frame)
                 .map_err(|e| format!("failed to scale rgb_frame: {e}"))?;
 
-            dbg!(
-                rgb_frame.width() * rgb_frame.height() * 4
-                    == rgb_frame.data(0).len().try_into().unwrap()
-            );
-            eprintln!(
-                "\n{} nonzero pixels\n",
-                rgb_frame.data(0).iter().filter(|p| **p != 0).count()
-            );
-            let handle = dbg!(widget::image::Handle::from_rgba(
-                rgb_frame.width(),
-                rgb_frame.height(),
-                rgb_frame.data(0).to_owned(),
-            ));
-            eprintln!();
+            let mut buf = Vec::new();
+            for (i, rgb) in rgb_frame.data(0).iter().enumerate() {
+                buf.push(*rgb);
+                if (i + 1) % 3 == 0 {
+                    buf.push(u8::MAX);
+                }
+            }
+
+            let handle =
+                widget::image::Handle::from_rgba(rgb_frame.width(), rgb_frame.height(), buf);
 
             return Ok((handle, new_hash));
         }
