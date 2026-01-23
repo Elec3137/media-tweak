@@ -44,8 +44,8 @@ enum Message {
 
     Update,
 
-    LoadedStartPreview(Result<(Vec<u8>, u64), String>),
-    LoadedEndPreview(Result<(Vec<u8>, u64), String>),
+    LoadedStartPreview(Result<(image::Handle, u64), String>),
+    LoadedEndPreview(Result<(image::Handle, u64), String>),
 
     Event(Event),
 
@@ -176,13 +176,13 @@ impl State {
             Message::ToggleVideo => self.use_video = !self.use_video,
             Message::ToggleAudio => self.use_audio = !self.use_audio,
 
-            Message::LoadedStartPreview(Ok((bytes, hash))) => {
+            Message::LoadedStartPreview(Ok((handle, hash))) => {
                 self.last_start_preview_hash = hash;
-                self.start_preview = Some(image::Handle::from_bytes(bytes))
+                self.start_preview = Some(handle)
             }
-            Message::LoadedEndPreview(Ok((bytes, hash))) => {
+            Message::LoadedEndPreview(Ok((handle, hash))) => {
                 self.last_end_preview_hash = hash;
-                self.end_preview = Some(image::Handle::from_bytes(bytes))
+                self.end_preview = Some(handle)
             }
             Message::LoadedStartPreview(Err(e)) | Message::LoadedEndPreview(Err(e)) => {
                 eprintln!("{}", e)

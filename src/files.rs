@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use iced::widget;
 use smol::process::Command;
 
 use ffmpeg_next as ffmpeg;
@@ -16,7 +17,7 @@ pub struct Preview {
 }
 
 impl Preview {
-    pub async fn decode_preview_image(self) -> Result<(Vec<u8>, u64), String> {
+    pub async fn decode_preview_image(self) -> Result<(widget::image::Handle, u64), String> {
         let mut ictx = ffmpeg::format::input(&self.input)
             .map_err(|e| format!("failed to open '{}' with ffmpeg: {e}", self.input))?;
 
@@ -91,27 +92,22 @@ impl Preview {
                 .run(&decoded, &mut rgb_frame)
                 .map_err(|e| format!("failed to scale rgb_frame: {e}"))?;
 
-            let mut buf = Vec::new();
-
-            // create the PPM signature
-            buf.extend_from_slice(
-                format!("P6\n{} {}\n255\n", rgb_frame.width(), rgb_frame.height()).as_bytes(),
+            dbg!(
+                rgb_frame.width() * rgb_frame.height() * 4
+                    == rgb_frame.data(0).len().try_into().unwrap()
             );
-            buf.extend_from_slice(rgb_frame.data(0));
+            eprintln!(
+                "\n{} nonzero pixels\n",
+                rgb_frame.data(0).iter().filter(|p| **p != 0).count()
+            );
+            let handle = dbg!(widget::image::Handle::from_rgba(
+                rgb_frame.width(),
+                rgb_frame.height(),
+                rgb_frame.data(0).to_owned(),
+            ));
+            eprintln!();
 
-            // write output to a file (for debugging)
-            // use std::{fs::File, io::Write};
-            // if let Ok(mut file) =
-            //     File::create_new(format!("/tmp/frame{}.ppm", self.seek))
-            //         .inspect_err(|e| eprintln!("failed to create file: {e}"))
-            // {
-            //     match file.write_all(&buf) {
-            //         Ok(_) => println!("successfully wrote to file"),
-            //         Err(e) => eprintln!("failed to write to file: {e}"),
-            //     }
-            // }
-
-            return Ok((buf, new_hash));
+            return Ok((handle, new_hash));
         }
 
         Err(String::from("No valid packets found"))
