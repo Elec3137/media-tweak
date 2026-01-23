@@ -6,7 +6,7 @@ use std::{
 use ffmpeg_next as ffmpeg;
 
 use iced::{
-    Color, Element, Event, Length, Subscription, Task, Theme,
+    Color, Element, Event, Length, Size, Subscription, Task, Theme,
     alignment::{Horizontal, Vertical},
     color, event,
     keyboard::{self, Key, key},
@@ -513,6 +513,7 @@ fn main() -> Result<(), iced::Error> {
                 danger: color!(0xff0000),
             },
         ))
+        .window_size((1000, 600))
         .run()?;
 
     Ok(())
