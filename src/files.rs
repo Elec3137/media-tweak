@@ -1,5 +1,6 @@
 use std::{
     ffi::OsStr,
+    hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
 };
 
@@ -11,10 +12,11 @@ use ffmpeg_next as ffmpeg;
 pub struct Preview {
     pub seek: i64,
     pub input: String,
+    pub prev_hash: u64,
 }
 
 impl Preview {
-    pub async fn decode_preview_image(self) -> Result<Vec<u8>, String> {
+    pub async fn decode_preview_image(self) -> Result<(Vec<u8>, u64), String> {
         let mut ictx = ffmpeg::format::input(&self.input)
             .map_err(|e| format!("failed to open '{}' with ffmpeg: {e}", self.input))?;
 
@@ -57,6 +59,22 @@ impl Preview {
                 None
             }
         }) {
+            // skip empty packets
+            if unsafe { packet.is_empty() } {
+                continue;
+            }
+
+            let mut hasher = DefaultHasher::new();
+            packet.data().hash(&mut hasher);
+            let new_hash = hasher.finish();
+
+            // make sure that the hash is different before decoding
+            if new_hash == self.prev_hash {
+                return Err(String::from(
+                    "benign: identical hash of encoded packet, not decoding",
+                ));
+            }
+
             decoder
                 .send_packet(&packet)
                 .map_err(|e| format!("decoder failed to send packet: {e}"))?;
@@ -93,7 +111,7 @@ impl Preview {
             //     }
             // }
 
-            return Ok(buf);
+            return Ok((buf, new_hash));
         }
 
         Err(String::from("No valid packets found"))

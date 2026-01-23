@@ -44,8 +44,8 @@ enum Message {
 
     Update,
 
-    LoadedStartPreview(Result<Vec<u8>, String>),
-    LoadedEndPreview(Result<Vec<u8>, String>),
+    LoadedStartPreview(Result<(Vec<u8>, u64), String>),
+    LoadedEndPreview(Result<(Vec<u8>, u64), String>),
 
     Event(Event),
 
@@ -71,8 +71,8 @@ struct State {
     last_start_preview: Preview,
     last_end_preview: Preview,
 
-    last_start_preview_bytes: Vec<u8>,
-    last_end_preview_bytes: Vec<u8>,
+    last_start_preview_hash: u64,
+    last_end_preview_hash: u64,
 
     start_preview: Option<image::Handle>,
     end_preview: Option<image::Handle>,
@@ -176,17 +176,13 @@ impl State {
             Message::ToggleVideo => self.use_video = !self.use_video,
             Message::ToggleAudio => self.use_audio = !self.use_audio,
 
-            Message::LoadedStartPreview(Ok(bytes)) => {
-                if bytes != self.last_start_preview_bytes {
-                    self.last_start_preview_bytes = bytes.clone();
-                    self.start_preview = Some(image::Handle::from_bytes(bytes))
-                }
+            Message::LoadedStartPreview(Ok((bytes, hash))) => {
+                self.last_start_preview_hash = hash;
+                self.start_preview = Some(image::Handle::from_bytes(bytes))
             }
-            Message::LoadedEndPreview(Ok(bytes)) => {
-                if bytes != self.last_end_preview_bytes {
-                    self.last_end_preview_bytes = bytes.clone();
-                    self.end_preview = Some(image::Handle::from_bytes(bytes))
-                }
+            Message::LoadedEndPreview(Ok((bytes, hash))) => {
+                self.last_end_preview_hash = hash;
+                self.end_preview = Some(image::Handle::from_bytes(bytes))
             }
             Message::LoadedStartPreview(Err(e)) | Message::LoadedEndPreview(Err(e)) => {
                 eprintln!("{}", e)
@@ -451,6 +447,7 @@ impl State {
         let start_preview = Preview {
             seek: (self.start * 1_000_000.0).round() as i64,
             input: self.input.clone(),
+            prev_hash: self.last_start_preview_hash,
         };
         let end_preview = Preview {
             seek: // seek slightly before the end of the video to get a frame
@@ -460,6 +457,7 @@ impl State {
                     self.end
                 } * 1_000_000.0).round() as i64,
             input: self.input.clone(),
+            prev_hash: self.last_end_preview_hash,
         };
 
         Task::batch([
