@@ -124,7 +124,13 @@ pub struct Video {
 
 impl Video {
     pub async fn create(self) -> Result<(), String> {
-        let mut args = vec!["-ss", &self.seek, "-t", &self.dur, "-i", &self.input];
+        #[rustfmt::skip]
+        let mut args = vec![
+            "-ss",  &self.seek,
+            "-t",   &self.dur,
+            "-i",   &self.input,
+            "-c:s", "copy",
+        ];
 
         if self.copy_audio {
             args.push("-c:a");
