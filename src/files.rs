@@ -1,9 +1,11 @@
 use std::{
     ffi::OsStr,
+    hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
 };
 
-use tokio::process::Command;
+use cosmic::widget;
+use smol::process::Command;
 
 use ffmpeg_next as ffmpeg;
 
@@ -11,10 +13,11 @@ use ffmpeg_next as ffmpeg;
 pub struct Preview {
     pub seek: i64,
     pub input: String,
+    pub prev_hash: u64,
 }
 
 impl Preview {
-    pub async fn decode_preview_image(self) -> Result<Vec<u8>, String> {
+    pub async fn decode_preview_image(self) -> Result<(widget::image::Handle, u64), String> {
         let mut ictx = ffmpeg::format::input(&self.input)
             .map_err(|e| format!("failed to open '{}' with ffmpeg: {e}", self.input))?;
 
@@ -57,6 +60,22 @@ impl Preview {
                 None
             }
         }) {
+            // skip empty packets
+            if unsafe { packet.is_empty() } {
+                continue;
+            }
+
+            let mut hasher = DefaultHasher::new();
+            packet.data().hash(&mut hasher);
+            let new_hash = hasher.finish();
+
+            // make sure that the hash is different before decoding
+            if new_hash == self.prev_hash {
+                return Err(String::from(
+                    "benign: identical hash of encoded packet, not decoding",
+                ));
+            }
+
             decoder
                 .send_packet(&packet)
                 .map_err(|e| format!("decoder failed to send packet: {e}"))?;
@@ -74,26 +93,17 @@ impl Preview {
                 .map_err(|e| format!("failed to scale rgb_frame: {e}"))?;
 
             let mut buf = Vec::new();
+            for (i, rgb) in rgb_frame.data(0).iter().enumerate() {
+                buf.push(*rgb);
+                if (i + 1) % 3 == 0 {
+                    buf.push(u8::MAX);
+                }
+            }
 
-            // create the PPM signature
-            buf.extend_from_slice(
-                format!("P6\n{} {}\n255\n", rgb_frame.width(), rgb_frame.height()).as_bytes(),
-            );
-            buf.extend_from_slice(rgb_frame.data(0));
+            let handle =
+                widget::image::Handle::from_rgba(rgb_frame.width(), rgb_frame.height(), buf);
 
-            // write output to a file (for debugging)
-            // use std::{fs::File, io::Write};
-            // if let Ok(mut file) =
-            //     File::create_new(format!("/tmp/frame{}.ppm", self.seek))
-            //         .inspect_err(|e| eprintln!("failed to create file: {e}"))
-            // {
-            //     match file.write_all(&buf) {
-            //         Ok(_) => println!("successfully wrote to file"),
-            //         Err(e) => eprintln!("failed to write to file: {e}"),
-            //     }
-            // }
-
-            return Ok(buf);
+            return Ok((handle, new_hash));
         }
 
         Err(String::from("No valid packets found"))
@@ -134,7 +144,7 @@ impl Video {
 
         match Command::new("ffmpeg").args(&args).spawn() {
             Err(e) => Err(e.to_string()),
-            Ok(mut child) => match child.wait().await {
+            Ok(mut child) => match child.status().await {
                 Err(e) => Err(e.to_string()),
                 Ok(status) => {
                     if status.success() {

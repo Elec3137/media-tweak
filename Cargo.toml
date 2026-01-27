@@ -5,9 +5,8 @@ edition = "2024"
 
 [dependencies]
 ffmpeg-next = "8.0.0"
-iced = { version = "*", features = ["image"] }
 rfd = "0.17.2"
-tokio = { version = "1.44.2", features = ["fs", "io-util", "process"] }
+smol = "2.0.2"
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"
@@ -20,7 +19,7 @@ features = [
     "dbus-config",
 
     # async runtime
-    "tokio",
+    "smol",
     # Windowing support for X11, Windows, Mac, & Redox
     "winit",
     # Add Wayland support to winit

@@ -9,11 +9,12 @@ use cosmic::{
     Action, ApplicationExt, Element, Task,
     app::Settings,
     iced::{
-        Event, Length, Subscription,
+        Event, Length, Size, Subscription,
         alignment::{Horizontal, Vertical},
         event,
         keyboard::{self, Key, key},
-        widget::{Image, checkbox, column, image::Handle, row, slider, text_input},
+        task,
+        widget::{Image, checkbox, column, image, row, slider, text_input},
         window,
     },
     iced_widget::{button, focus_next, focus_previous, text},
@@ -34,6 +35,8 @@ enum Message {
 
     StartChange(f64),
     EndChange(f64),
+    SliderStartChange(f64),
+    SliderEndChange(f64),
 
     ToggleVideo,
     ToggleAudio,
@@ -42,8 +45,8 @@ enum Message {
 
     Update,
 
-    LoadedStartPreview(Result<Vec<u8>, String>),
-    LoadedEndPreview(Result<Vec<u8>, String>),
+    LoadedStartPreview(Result<(image::Handle, u64), String>),
+    LoadedEndPreview(Result<(image::Handle, u64), String>),
 
     Event(Event),
 
@@ -71,8 +74,14 @@ struct State {
     last_start_preview: Preview,
     last_end_preview: Preview,
 
-    start_preview: Option<Handle>,
-    end_preview: Option<Handle>,
+    last_start_preview_hash: u64,
+    last_end_preview_hash: u64,
+
+    start_preview: Option<image::Handle>,
+    end_preview: Option<image::Handle>,
+
+    start_preview_task_handle: Option<task::Handle>,
+    end_preview_task_handle: Option<task::Handle>,
 
     output: String,
     output_is_generated: bool,
@@ -157,6 +166,18 @@ impl cosmic::Application for State {
             Message::PickOutput => {
                 return Task::perform(pick_folder(), Message::OutputPicked).map(Action::App);
             }
+
+            Message::SliderStartChange(val) => {
+                self.start = val;
+                self.number_changed = true;
+                return self.check_inputs();
+            }
+            Message::SliderEndChange(val) => {
+                self.end = val;
+                self.number_changed = true;
+                return self.check_inputs();
+            }
+
             Message::InputPicked(opt) => {
                 if let Some(path) = opt
                     && let Some(str) = path.to_str()
@@ -184,11 +205,13 @@ impl cosmic::Application for State {
             Message::ToggleVideo => self.use_video = !self.use_video,
             Message::ToggleAudio => self.use_audio = !self.use_audio,
 
-            Message::LoadedStartPreview(Ok(bytes)) => {
-                self.start_preview = Some(Handle::from_bytes(bytes))
+            Message::LoadedStartPreview(Ok((handle, hash))) => {
+                self.last_start_preview_hash = hash;
+                self.start_preview = Some(handle)
             }
-            Message::LoadedEndPreview(Ok(bytes)) => {
-                self.end_preview = Some(Handle::from_bytes(bytes))
+            Message::LoadedEndPreview(Ok((handle, hash))) => {
+                self.last_end_preview_hash = hash;
+                self.end_preview = Some(handle)
             }
             Message::LoadedStartPreview(Err(e)) | Message::LoadedEndPreview(Err(e)) => {
                 eprintln!("{}", e)
@@ -254,9 +277,12 @@ impl cosmic::Application for State {
             .on_submit(Message::Submitted);
         let input_picker = button("pick file").on_press(Message::PickInput);
 
-        let start_slider = slider(0_f64..=self.end - 1.0, self.start, Message::StartChange)
-            .default(0)
-            .on_release(Message::Update);
+        let start_slider = slider(
+            0_f64..=self.end - 1.0,
+            self.start,
+            Message::SliderStartChange,
+        )
+        .default(0);
         let start_field = text_input("start", &self.start.to_string())
             .on_input(|str| Message::StartChange(str.parse().unwrap_or_default()))
             .width(200)
@@ -265,10 +291,9 @@ impl cosmic::Application for State {
         let end_slider = slider(
             self.start + 1.0..=self.input_length,
             self.end,
-            Message::EndChange,
+            Message::SliderEndChange,
         )
-        .default(self.input_length)
-        .on_release(Message::Update);
+        .default(self.input_length);
         let end_field = text_input("end", &self.end.to_string())
             .on_input(|str| Message::EndChange(str.parse().unwrap_or_default()))
             .width(200)
@@ -284,10 +309,10 @@ impl cosmic::Application for State {
             && let Some(h_end) = self.end_preview.clone()
         {
             row![
-                Image::<Handle>::new(h_start)
+                Image::<image::Handle>::new(h_start)
                     .width(Length::Fill)
                     .height(Length::Fill),
-                Image::<Handle>::new(h_end)
+                Image::<image::Handle>::new(h_end)
                     .width(Length::Fill)
                     .height(Length::Fill)
             ]
@@ -451,6 +476,7 @@ impl State {
         let start_preview = Preview {
             seek: (self.start * 1_000_000.0).round() as i64,
             input: self.input.clone(),
+            prev_hash: self.last_start_preview_hash,
         };
         let end_preview = Preview {
             seek: // seek slightly before the end of the video to get a frame
@@ -460,6 +486,7 @@ impl State {
                     self.end
                 } * 1_000_000.0).round() as i64,
             input: self.input.clone(),
+            prev_hash: self.last_end_preview_hash,
         };
 
         Task::batch([
@@ -468,20 +495,34 @@ impl State {
                 Task::none()
             } else {
                 self.last_start_preview = start_preview.clone();
-                Task::perform(
+                let (task, handle) = Task::perform(
                     start_preview.decode_preview_image(),
                     Message::LoadedStartPreview,
                 )
+                .abortable();
+                if let Some(extra_handle) = &self.start_preview_task_handle {
+                    extra_handle.abort();
+                }
+                self.start_preview_task_handle = Some(handle);
+
+                task
             },
             if end_preview == self.last_end_preview {
                 // No need to reload the same image
                 Task::none()
             } else {
                 self.last_end_preview = end_preview.clone();
-                Task::perform(
+                let (task, handle) = Task::perform(
                     end_preview.decode_preview_image(),
                     Message::LoadedEndPreview,
                 )
+                .abortable();
+                if let Some(extra_handle) = &self.end_preview_task_handle {
+                    extra_handle.abort();
+                }
+                self.end_preview_task_handle = Some(handle);
+
+                task
             },
         ])
         .map(Action::App)
@@ -489,7 +530,13 @@ impl State {
 }
 
 fn main() -> Result<(), cosmic::iced::Error> {
-    cosmic::app::run::<State>(Settings::default().exit_on_close(true).is_daemon(false), ())?;
+    cosmic::app::run::<State>(
+        Settings::default()
+            .exit_on_close(true)
+            .size(Size::new(1000.0, 600.0))
+            .is_daemon(false),
+        (),
+    )?;
 
     Ok(())
 }
