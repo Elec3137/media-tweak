@@ -111,35 +111,37 @@ impl Preview {
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct Video {
-    pub seek: String,
-    pub dur: String,
+pub struct Media {
+    pub start: f64,
+    pub dur: f64,
 
     pub input: String,
     pub output: String,
 
-    pub copy_video: bool,
-    pub copy_audio: bool,
+    pub use_video: bool,
+    pub use_audio: bool,
 }
 
-impl Video {
+impl Media {
     pub async fn create(self) -> Result<(), String> {
+        let seek = self.start.to_string();
+        let dur = self.dur.to_string();
+
         #[rustfmt::skip]
         let mut args = vec![
-            "-ss",  &self.seek,
-            "-t",   &self.dur,
+            "-ss",  &seek,
+            "-t",   &dur,
             "-i",   &self.input,
-            "-c:s", "copy",
         ];
 
-        if self.copy_audio {
+        if self.use_audio {
             args.push("-c:a");
             args.push("copy");
         } else {
             args.push("-an");
         }
 
-        if self.copy_video {
+        if self.use_video {
             args.push("-c:v");
             args.push("copy");
         } else {

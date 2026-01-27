@@ -55,18 +55,15 @@ enum Message {
 
 #[derive(Debug, Default)]
 struct State {
-    input: String,
+    media: Media,
+
     input_changed: bool,
     input_exists: bool,
 
     input_length: f64,
 
-    start: f64,
     end: f64,
     number_changed: bool,
-
-    use_video: bool,
-    use_audio: bool,
 
     last_start_preview: Preview,
     last_end_preview: Preview,
@@ -80,7 +77,6 @@ struct State {
     start_preview_task_handle: Option<task::Handle>,
     end_preview_task_handle: Option<task::Handle>,
 
-    output: String,
     output_is_generated: bool,
     output_folder_exists: bool,
 
@@ -110,18 +106,21 @@ impl State {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::InputChange(str) => {
-                self.input = str;
+                self.media.input = str;
                 self.input_changed = true;
-                if let Ok(exists) = Path::new(&self.input).try_exists().inspect_err(|e| {
-                    eprintln!("failed to check if input '{}' exists: {e}", self.input)
+                if let Ok(exists) = Path::new(&self.media.input).try_exists().inspect_err(|e| {
+                    eprintln!(
+                        "failed to check if input '{}' exists: {e}",
+                        self.media.input
+                    )
                 }) {
                     self.input_exists = exists;
                 }
             }
             Message::OutputChange(str, is_generated) => {
-                self.output = str;
+                self.media.output = str;
                 self.output_is_generated = is_generated;
-                if let Some(path) = Path::new(&self.output).parent()
+                if let Some(path) = Path::new(&self.media.output).parent()
                     && let Ok(exists) = path
                         .try_exists()
                         .inspect_err(|e| eprintln!("failed to check if input exists: {e}"))
@@ -130,22 +129,26 @@ impl State {
                 }
             }
             Message::StartChange(val) => {
-                self.start = val;
+                self.media.start = val;
                 self.number_changed = true;
+                self.media.dur = self.end - self.media.start;
             }
             Message::EndChange(val) => {
                 self.end = val;
                 self.number_changed = true;
+                self.media.dur = self.end - self.media.start;
             }
 
             Message::SliderStartChange(val) => {
-                self.start = val;
+                self.media.start = val;
                 self.number_changed = true;
+                self.media.dur = self.end - self.media.start;
                 return self.check_inputs();
             }
             Message::SliderEndChange(val) => {
                 self.end = val;
                 self.number_changed = true;
+                self.media.dur = self.end - self.media.start;
                 return self.check_inputs();
             }
 
@@ -163,7 +166,11 @@ impl State {
                 if let Some(mut path) = opt {
                     // push instead of setting filename
                     // since picked folder is interpreted as the filename here
-                    path.push(Path::new(&self.output).file_name().unwrap_or_default());
+                    path.push(
+                        Path::new(&self.media.output)
+                            .file_name()
+                            .unwrap_or_default(),
+                    );
                     if let Some(str) = path.to_str() {
                         return Task::done(Message::OutputChange(str.to_owned(), false));
                     }
@@ -173,8 +180,8 @@ impl State {
             Message::Submitted => return Task::batch([focus_next(), self.check_inputs()]),
             Message::Update => return self.check_inputs(),
 
-            Message::ToggleVideo => self.use_video = !self.use_video,
-            Message::ToggleAudio => self.use_audio = !self.use_audio,
+            Message::ToggleVideo => self.media.use_video = !self.media.use_video,
+            Message::ToggleAudio => self.media.use_audio = !self.media.use_audio,
 
             Message::LoadedStartPreview(Ok((handle, hash))) => {
                 self.last_start_preview_hash = hash;
@@ -239,7 +246,7 @@ impl State {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let input_field = text_input("input file", &self.input)
+        let input_field = text_input("input file", &self.media.input)
             .on_input(Message::InputChange)
             .on_submit(Message::Submitted);
         let input_picker =
@@ -253,17 +260,17 @@ impl State {
 
         let start_slider = slider(
             0_f64..=self.end - 1.0,
-            self.start,
+            self.media.start,
             Message::SliderStartChange,
         )
         .default(0);
-        let start_field = text_input("start", &self.start.to_string())
+        let start_field = text_input("start", &self.media.start.to_string())
             .on_input(|str| Message::StartChange(str.parse().unwrap_or_default()))
             .width(200)
             .on_submit(Message::Submitted);
 
         let end_slider = slider(
-            self.start + 1.0..=self.input_length,
+            self.media.start + 1.0..=self.input_length,
             self.end,
             Message::SliderEndChange,
         )
@@ -273,7 +280,7 @@ impl State {
             .width(200)
             .on_submit(Message::Submitted);
 
-        let output_field = text_input("output file", &self.output)
+        let output_field = text_input("output file", &self.media.output)
             .on_input(|str| Message::OutputChange(str, false))
             .on_submit(Message::Submitted);
         let output_picker = button("pick folder").on_press(Message::PickOutput).style(
@@ -284,11 +291,11 @@ impl State {
             },
         );
 
-        let video_checkbox = checkbox(self.use_video).on_toggle(|_| Message::ToggleVideo);
+        let video_checkbox = checkbox(self.media.use_video).on_toggle(|_| Message::ToggleVideo);
         let space = text("             ");
-        let audio_checkbox = checkbox(self.use_audio).on_toggle(|_| Message::ToggleAudio);
+        let audio_checkbox = checkbox(self.media.use_audio).on_toggle(|_| Message::ToggleAudio);
 
-        let preview_row = if self.use_video
+        let preview_row = if self.media.use_video
             && let Some(h_start) = self.start_preview.clone()
             && let Some(h_end) = self.end_preview.clone()
         {
@@ -313,7 +320,7 @@ impl State {
         };
 
         let instantiate_button = button("Instantiate!").on_press(Message::Instantiate);
-        let duration_string = format!("Duration: {} seconds", self.end - self.start);
+        let duration_string = format!("Duration: {} seconds", self.media.dur);
 
         #[rustfmt::skip]
         return column![
@@ -361,7 +368,7 @@ impl State {
         }
         if self.input_changed {
             match self.update_from_input() {
-                Err(e) => eprintln!("failed to inspect input media '{}': {e}", self.input),
+                Err(e) => eprintln!("failed to inspect input media '{}': {e}", self.media.input),
                 Ok(task) => {
                     tasks.push(task);
                     tasks.push(self.create_preview_images());
@@ -369,7 +376,7 @@ impl State {
             }
 
             self.input_changed = false;
-        } else if self.output.is_empty() && !self.output_is_generated {
+        } else if self.media.output.is_empty() && !self.output_is_generated {
             tasks.push(self.generate_output_path());
         }
 
@@ -381,12 +388,12 @@ impl State {
             self.end = self.input_length;
         }
 
-        if self.start > self.end {
-            self.start = self.end;
+        if self.media.start > self.end {
+            self.media.start = self.end;
         }
 
-        if self.end < self.start {
-            self.end = self.start;
+        if self.end < self.media.start {
+            self.end = self.media.start;
         }
     }
 
@@ -396,13 +403,17 @@ impl State {
             return Err(ffmpeg::Error::Unknown);
         }
 
-        (self.input_length, self.use_video, self.use_audio) = get_video_params(&self.input)?;
+        (
+            self.input_length,
+            self.media.use_video,
+            self.media.use_audio,
+        ) = get_video_params(&self.media.input)?;
 
         // Set the end to the duration of the video
         self.end = self.input_length;
 
         // Generate a template output path if there is none from user input
-        if self.output.is_empty() || self.output_is_generated {
+        if self.media.output.is_empty() || self.output_is_generated {
             Ok(self.generate_output_path())
         } else {
             Ok(Task::none())
@@ -410,7 +421,7 @@ impl State {
     }
 
     fn generate_output_path(&mut self) -> Task<Message> {
-        let input_path = PathBuf::from(&self.input);
+        let input_path = PathBuf::from(&self.media.input);
 
         Task::perform(modify_path(input_path), |path| {
             Message::OutputChange(
@@ -421,32 +432,19 @@ impl State {
     }
 
     fn instantiate(&self) -> Task<Message> {
-        Task::perform(
-            Video {
-                seek: self.start.to_string(),
-                dur: (self.end - self.start).to_string(),
-
-                input: self.input.clone(),
-                output: self.output.clone(),
-
-                copy_video: self.use_video,
-                copy_audio: self.use_audio,
-            }
-            .create(),
-            Message::InstantiateFinished,
-        )
+        Task::perform(self.media.clone().create(), Message::InstantiateFinished)
     }
 
     /// makes a batch of tasks to create start and end preview images
     /// no effect if use_video is false
     fn create_preview_images(&mut self) -> Task<Message> {
-        if !self.use_video {
+        if !self.media.use_video {
             return Task::none();
         }
 
         let start_preview = Preview {
-            seek: (self.start * 1_000_000.0).round() as i64,
-            input: self.input.clone(),
+            seek: (self.media.start * 1_000_000.0).round() as i64,
+            input: self.media.input.clone(),
             prev_hash: self.last_start_preview_hash,
         };
         let end_preview = Preview {
@@ -456,7 +454,7 @@ impl State {
                 } else {
                     self.end
                 } * 1_000_000.0).round() as i64,
-            input: self.input.clone(),
+            input: self.media.input.clone(),
             prev_hash: self.last_end_preview_hash,
         };
 
