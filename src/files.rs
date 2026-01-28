@@ -1,7 +1,7 @@
 use std::{
     ffi::OsStr,
     hash::{DefaultHasher, Hash, Hasher},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use iced::widget;
@@ -121,10 +121,11 @@ pub struct Media {
     pub use_video: bool,
     pub use_audio: bool,
     pub use_subs: bool,
-    pub use_all_streams: bool,
+    pub use_extra_streams: bool,
 }
 
 impl Media {
+    /// uses the parameters and the input to create the output
     pub async fn create(self) -> Result<(), String> {
         let seek = self.start.to_string();
         let dur = self.dur.to_string();
@@ -157,7 +158,7 @@ impl Media {
             args.push("-sn");
         }
 
-        if self.use_all_streams {
+        if self.use_extra_streams {
             args.push("-map");
             args.push("0");
         }
@@ -180,33 +181,29 @@ impl Media {
             },
         }
     }
-}
 
-/// returns Ok((len, has_video, has_audio, has_subs, has_extra_streams))
-pub fn get_video_params<P: AsRef<Path> + ?Sized>(
-    path: &P,
-) -> Result<(f64, bool, bool, bool, bool), ffmpeg::Error> {
-    // try to load the media
-    let context = ffmpeg::format::input(path)?;
+    /// updates the Media with the input parameters, returning the input length.
+    /// by default, we use all streams that exist
+    pub fn update_video_params(&mut self) -> Result<f64, ffmpeg::Error> {
+        // try to load the media
+        let context = ffmpeg::format::input(&self.input)?;
 
-    // get the media length
-    let len = context.duration() as f64 / f64::from(ffmpeg::ffi::AV_TIME_BASE);
+        let mut streams = context.streams();
 
-    let mut streams = context.streams();
+        self.use_video =
+            streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Video);
 
-    let has_video =
-        streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Video);
+        self.use_audio =
+            streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio);
 
-    let has_audio =
-        streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio);
+        self.use_subs =
+            streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Subtitle);
 
-    let has_subs =
-        streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Subtitle);
+        self.use_extra_streams = context.nb_streams()
+            > self.use_video as u32 + self.use_audio as u32 + self.use_subs as u32;
 
-    let has_extra_streams =
-        context.nb_streams() > has_video as u32 + has_audio as u32 + has_subs as u32;
-
-    Ok((len, has_video, has_audio, has_subs, has_extra_streams))
+        Ok(context.duration() as f64 / f64::from(ffmpeg::ffi::AV_TIME_BASE))
+    }
 }
 
 pub async fn pick_file() -> Option<PathBuf> {

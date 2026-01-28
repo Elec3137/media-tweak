@@ -40,7 +40,7 @@ enum Message {
     ToggleVideo,
     ToggleAudio,
     ToggleSubs,
-    ToggleAllStreams,
+    ToggleExtraStreams,
 
     Submitted,
 
@@ -185,7 +185,9 @@ impl State {
             Message::ToggleVideo => self.media.use_video = !self.media.use_video,
             Message::ToggleAudio => self.media.use_audio = !self.media.use_audio,
             Message::ToggleSubs => self.media.use_subs = !self.media.use_subs,
-            Message::ToggleAllStreams => self.media.use_all_streams = !self.media.use_all_streams,
+            Message::ToggleExtraStreams => {
+                self.media.use_extra_streams = !self.media.use_extra_streams
+            }
 
             Message::LoadedStartPreview(Ok((handle, hash))) => {
                 self.last_start_preview_hash = hash;
@@ -243,13 +245,8 @@ impl State {
 
                         Key::Character("v") => return Task::done(Message::ToggleVideo),
                         Key::Character("a") => return Task::done(Message::ToggleAudio),
-                        Key::Character("s") => {
-                            return if modifiers.shift() {
-                                Task::done(Message::ToggleAllStreams)
-                            } else {
-                                Task::done(Message::ToggleSubs)
-                            };
-                        }
+                        Key::Character("s") => return Task::done(Message::ToggleSubs),
+                        Key::Character("e") => return Task::done(Message::ToggleExtraStreams),
 
                         // early-exit hotkeys
                         Key::Named(key::Named::Escape) | Key::Character("q") => {
@@ -341,9 +338,9 @@ impl State {
         let subs_checkbox = checkbox(self.media.use_subs)
             .on_toggle(|_| Message::ToggleSubs)
             .label("subtitles");
-        let all_streams_checkbox = checkbox(self.media.use_all_streams)
-            .on_toggle(|_| Message::ToggleAllStreams)
-            .label("all streams");
+        let extra_streams_checkbox = checkbox(self.media.use_extra_streams)
+            .on_toggle(|_| Message::ToggleExtraStreams)
+            .label("extra streams");
 
         let preview_row = if self.media.use_video
             && let Some(h_start) = self.start_preview.clone()
@@ -382,7 +379,7 @@ impl State {
             row![text("End time (seconds):    "), end_field, end_slider]
                 .align_y(Vertical::Center),
 
-            row![video_checkbox, audio_checkbox, subs_checkbox, all_streams_checkbox]
+            row![video_checkbox, audio_checkbox, subs_checkbox, extra_streams_checkbox]
                 .spacing(100)
                 .align_y(Vertical::Center),
 
@@ -457,13 +454,7 @@ impl State {
             return Err(ffmpeg::Error::Unknown);
         }
 
-        (
-            self.input_length,
-            self.media.use_video,
-            self.media.use_audio,
-            self.media.use_subs,
-            self.media.use_all_streams,
-        ) = get_video_params(&self.media.input)?;
+        self.input_length = self.media.update_video_params()?;
 
         // Set the end to the duration of the video
         self.end = self.input_length;
