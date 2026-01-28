@@ -120,6 +120,8 @@ pub struct Media {
 
     pub use_video: bool,
     pub use_audio: bool,
+    pub use_subs: bool,
+    pub use_all_streams: bool,
 }
 
 impl Media {
@@ -146,6 +148,18 @@ impl Media {
             args.push("copy");
         } else {
             args.push("-vn");
+        }
+
+        if self.use_subs {
+            args.push("-c:s");
+            args.push("copy");
+        } else {
+            args.push("-sn");
+        }
+
+        if self.use_all_streams {
+            args.push("-map");
+            args.push("0");
         }
 
         args.push(&self.output);

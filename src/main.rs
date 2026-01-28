@@ -39,6 +39,8 @@ enum Message {
 
     ToggleVideo,
     ToggleAudio,
+    ToggleSubs,
+    ToggleAllStreams,
 
     Submitted,
 
@@ -182,6 +184,8 @@ impl State {
 
             Message::ToggleVideo => self.media.use_video = !self.media.use_video,
             Message::ToggleAudio => self.media.use_audio = !self.media.use_audio,
+            Message::ToggleSubs => self.media.use_subs = !self.media.use_subs,
+            Message::ToggleAllStreams => self.media.use_all_streams = !self.media.use_all_streams,
 
             Message::LoadedStartPreview(Ok((handle, hash))) => {
                 self.last_start_preview_hash = hash;
@@ -209,6 +213,13 @@ impl State {
 
                         Key::Character("v") => return Task::done(Message::ToggleVideo),
                         Key::Character("a") => return Task::done(Message::ToggleAudio),
+                        Key::Character("s") => {
+                            return if modifiers.shift() {
+                                Task::done(Message::ToggleAllStreams)
+                            } else {
+                                Task::done(Message::ToggleSubs)
+                            };
+                        }
 
                         // early-exit hotkeys
                         Key::Named(key::Named::Escape) | Key::Character("q") => {
@@ -291,9 +302,18 @@ impl State {
             },
         );
 
-        let video_checkbox = checkbox(self.media.use_video).on_toggle(|_| Message::ToggleVideo);
-        let space = text("             ");
-        let audio_checkbox = checkbox(self.media.use_audio).on_toggle(|_| Message::ToggleAudio);
+        let video_checkbox = checkbox(self.media.use_video)
+            .on_toggle(|_| Message::ToggleVideo)
+            .label("video");
+        let audio_checkbox = checkbox(self.media.use_audio)
+            .on_toggle(|_| Message::ToggleAudio)
+            .label("audio");
+        let subs_checkbox = checkbox(self.media.use_subs)
+            .on_toggle(|_| Message::ToggleSubs)
+            .label("subtitles");
+        let all_streams_checkbox = checkbox(self.media.use_all_streams)
+            .on_toggle(|_| Message::ToggleAllStreams)
+            .label("all streams");
 
         let preview_row = if self.media.use_video
             && let Some(h_start) = self.start_preview.clone()
@@ -332,8 +352,8 @@ impl State {
             row![text("End time (seconds):    "), end_field, end_slider]
                 .align_y(Vertical::Center),
 
-            row![text("Video stream:"), video_checkbox, space, text("Audio stream:"), audio_checkbox]
-                .spacing(10)
+            row![video_checkbox, audio_checkbox, subs_checkbox, all_streams_checkbox]
+                .spacing(100)
                 .align_y(Vertical::Center),
 
             row![output_field, output_picker],
