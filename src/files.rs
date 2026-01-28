@@ -182,10 +182,10 @@ impl Media {
     }
 }
 
-/// returns Ok((len, has_video, has_audio))
+/// returns Ok((len, has_video, has_audio, has_subs, has_extra_streams))
 pub fn get_video_params<P: AsRef<Path> + ?Sized>(
     path: &P,
-) -> Result<(f64, bool, bool), ffmpeg::Error> {
+) -> Result<(f64, bool, bool, bool, bool), ffmpeg::Error> {
     // try to load the media
     let context = ffmpeg::format::input(path)?;
 
@@ -200,7 +200,13 @@ pub fn get_video_params<P: AsRef<Path> + ?Sized>(
     let has_audio =
         streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Audio);
 
-    Ok((len, has_video, has_audio))
+    let has_subs =
+        streams.any(|stream| stream.parameters().medium() == ffmpeg::media::Type::Subtitle);
+
+    let has_extra_streams =
+        context.nb_streams() > has_video as u32 + has_audio as u32 + has_subs as u32;
+
+    Ok((len, has_video, has_audio, has_subs, has_extra_streams))
 }
 
 pub async fn pick_file() -> Option<PathBuf> {

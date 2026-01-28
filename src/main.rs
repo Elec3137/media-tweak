@@ -461,6 +461,8 @@ impl State {
             self.input_length,
             self.media.use_video,
             self.media.use_audio,
+            self.media.use_subs,
+            self.media.use_all_streams,
         ) = get_video_params(&self.media.input)?;
 
         // Set the end to the duration of the video
