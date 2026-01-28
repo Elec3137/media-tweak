@@ -19,8 +19,11 @@ use iced::{
     window,
 };
 
-mod files;
-use files::*;
+mod fs;
+use fs::*;
+
+mod media;
+use media::*;
 
 #[derive(Debug, Clone)]
 enum Message {
