@@ -34,8 +34,8 @@ enum Message {
 
     StartChange(f64),
     EndChange(f64),
-    SliderStartChange(f64),
-    SliderEndChange(f64),
+    EagerStartChange(f64),
+    EagerEndChange(f64),
 
     ToggleVideo,
     ToggleAudio,
@@ -141,13 +141,13 @@ impl State {
                 self.media.dur = self.end - self.media.start;
             }
 
-            Message::SliderStartChange(val) => {
+            Message::EagerStartChange(val) => {
                 self.media.start = val;
                 self.number_changed = true;
                 self.media.dur = self.end - self.media.start;
                 return self.check_inputs();
             }
-            Message::SliderEndChange(val) => {
+            Message::EagerEndChange(val) => {
                 self.end = val;
                 self.number_changed = true;
                 self.media.dur = self.end - self.media.start;
@@ -211,6 +211,36 @@ impl State {
                             }
                         }
 
+                        Key::Named(key::Named::ArrowRight) | Key::Character("l") => {
+                            return if modifiers.shift() {
+                                Task::done(Message::EagerEndChange(self.end + 5.0))
+                            } else {
+                                Task::done(Message::EagerStartChange(self.media.start + 5.0))
+                            };
+                        }
+                        Key::Named(key::Named::ArrowLeft) | Key::Character("h") => {
+                            return if modifiers.shift() {
+                                Task::done(Message::EagerEndChange(self.end - 5.0))
+                            } else {
+                                Task::done(Message::EagerStartChange(self.media.start - 5.0))
+                            };
+                        }
+
+                        Key::Named(key::Named::ArrowUp) | Key::Character("k") => {
+                            return if modifiers.shift() {
+                                Task::done(Message::EagerEndChange(self.end + 10.0))
+                            } else {
+                                Task::done(Message::EagerStartChange(self.media.start + 10.0))
+                            };
+                        }
+                        Key::Named(key::Named::ArrowDown) | Key::Character("j") => {
+                            return if modifiers.shift() {
+                                Task::done(Message::EagerEndChange(self.end - 10.0))
+                            } else {
+                                Task::done(Message::EagerStartChange(self.media.start - 10.0))
+                            };
+                        }
+
                         Key::Character("v") => return Task::done(Message::ToggleVideo),
                         Key::Character("a") => return Task::done(Message::ToggleAudio),
                         Key::Character("s") => {
@@ -272,7 +302,7 @@ impl State {
         let start_slider = slider(
             0_f64..=self.end - 1.0,
             self.media.start,
-            Message::SliderStartChange,
+            Message::EagerStartChange,
         )
         .default(0);
         let start_field = text_input("start", &self.media.start.to_string())
@@ -283,7 +313,7 @@ impl State {
         let end_slider = slider(
             self.media.start + 1.0..=self.input_length,
             self.end,
-            Message::SliderEndChange,
+            Message::EagerEndChange,
         )
         .default(self.input_length);
         let end_field = text_input("end", &self.end.to_string())
@@ -404,6 +434,10 @@ impl State {
     }
 
     fn clamp_numbers(&mut self) {
+        if self.media.start < 0.0 {
+            self.media.start = 0.0;
+        }
+
         if self.end > self.input_length {
             self.end = self.input_length;
         }
