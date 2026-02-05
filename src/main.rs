@@ -49,8 +49,8 @@ enum Message {
 
     Update,
 
-    LoadedStartPreview(Result<(image::Handle, u64), String>),
-    LoadedEndPreview(Result<(image::Handle, u64), String>),
+    LoadedStartPreview(Result<(image::Handle, u64), PreviewError>),
+    LoadedEndPreview(Result<(image::Handle, u64), PreviewError>),
 
     Event(Event),
 
@@ -201,7 +201,9 @@ impl State {
                 self.end_preview = Some(handle)
             }
             Message::LoadedStartPreview(Err(e)) | Message::LoadedEndPreview(Err(e)) => {
-                eprintln!("{}", e)
+                if e != PreviewError::SameHash {
+                    eprintln!("{e}")
+                }
             }
 
             Message::Event(event) => {

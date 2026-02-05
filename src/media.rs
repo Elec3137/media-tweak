@@ -1,4 +1,7 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    fmt::{self, Display},
+    hash::{DefaultHasher, Hash, Hasher},
+};
 
 use iced::widget;
 use smol::process::Command;
@@ -12,24 +15,42 @@ pub struct Preview {
     pub prev_hash: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PreviewError {
+    Raw(ffmpeg::Error),
+    SameHash,
+    NoPackets,
+}
+
+impl Display for PreviewError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PreviewError::Raw(e) => e.fmt(f),
+            PreviewError::SameHash => write!(f, "same encoded hash"),
+            PreviewError::NoPackets => write!(f, "no valid packets in input"),
+        }
+    }
+}
+
+impl std::error::Error for PreviewError {}
+
 impl Preview {
-    pub async fn decode_preview_image(self) -> Result<(widget::image::Handle, u64), String> {
-        let mut ictx = ffmpeg::format::input(&self.input)
-            .map_err(|e| format!("failed to open '{}' with ffmpeg: {e}", self.input))?;
+    pub async fn decode_preview_image(self) -> Result<(widget::image::Handle, u64), PreviewError> {
+        let mut ictx = ffmpeg::format::input(&self.input).map_err(PreviewError::Raw)?;
 
         let input = ictx
             .streams()
             .best(ffmpeg_next::media::Type::Video)
             .ok_or(ffmpeg::Error::StreamNotFound)
-            .map_err(|e| format!("Failed to find video stream: {e}"))?;
+            .map_err(PreviewError::Raw)?;
 
         let context_decoder = ffmpeg::codec::context::Context::from_parameters(input.parameters())
-            .map_err(|e| format!("failed to get context decoder: {e}"))?;
+            .map_err(PreviewError::Raw)?;
 
         let mut decoder = context_decoder
             .decoder()
             .video()
-            .map_err(|e| format!("failed to get final decoder: {e}"))?;
+            .map_err(PreviewError::Raw)?;
 
         let mut scalar = ffmpeg::software::scaling::Context::get(
             decoder.format(),
@@ -40,14 +61,14 @@ impl Preview {
             decoder.height(),
             ffmpeg::software::scaling::Flags::BILINEAR,
         )
-        .map_err(|e| format!("failed to get scalar of created decoder: {e}"))?;
+        .map_err(PreviewError::Raw)?;
 
         let target_stream = input.index();
         let mut decoded = ffmpeg::util::frame::video::Video::empty();
         let mut rgb_frame = ffmpeg::util::frame::video::Video::empty();
 
         ictx.seek(self.seek, i64::MIN..i64::MAX)
-            .map_err(|e| format!("failed to seek to '{}': {e}", self.seek))?;
+            .map_err(PreviewError::Raw)?;
 
         for packet in ictx.packets().filter_map(|(stream, packet)| {
             if stream.index() == target_stream {
@@ -67,26 +88,21 @@ impl Preview {
 
             // make sure that the hash is different before decoding
             if new_hash == self.prev_hash {
-                return Err(String::from(
-                    "benign: identical hash of encoded packet, not decoding",
-                ));
+                return Err(PreviewError::SameHash);
             }
 
-            decoder
-                .send_packet(&packet)
-                .map_err(|e| format!("decoder failed to send packet: {e}"))?;
+            decoder.send_packet(&packet).map_err(PreviewError::Raw)?;
 
-            if let Err(e) = decoder.receive_frame(&mut decoded) {
-                match e {
-                    // skip the rest of the loop on benign "Resource temporarily unavailable" error
-                    ffmpeg::Error::Other { errno: 11 } => continue,
-                    _ => eprintln!("decoder failed to recieve frame: {e}"),
-                }
+            match decoder.receive_frame(&mut decoded) {
+                // skip the rest of the loop on benign "Resource temporarily unavailable" error
+                Err(ffmpeg::Error::Other { errno: 11 }) => continue,
+                Err(e) => return Err(PreviewError::Raw(e)),
+                _ => {}
             }
 
             scalar
                 .run(&decoded, &mut rgb_frame)
-                .map_err(|e| format!("failed to scale rgb_frame: {e}"))?;
+                .map_err(PreviewError::Raw)?;
 
             let mut buf = Vec::new();
             for (i, rgb) in rgb_frame.data(0).iter().enumerate() {
@@ -102,7 +118,7 @@ impl Preview {
             return Ok((handle, new_hash));
         }
 
-        Err(String::from("No valid packets found"))
+        Err(PreviewError::NoPackets)
     }
 }
 
